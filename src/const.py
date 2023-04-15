@@ -33,8 +33,8 @@ URL_PUSH_LINK_COVER_IMAGE = 'https://mmbiz.qpic.cn/mmbiz_png/kGCQTgD98bRDoEH3Cxa
 URL_SITE_BASE = environ['URL_SITE_BASE']
 URL_WEIXIN_BASE = 'https://api.weixin.qq.com/cgi-bin'
 BASE_ARTICLE_FILES = {
-    'usage': path.abspath(path.join(DIR_DATA, 'usage-article-id.yml')),
-    'upgrade': path.abspath(path.join(DIR_DATA, 'upgrade-article-id.yml')),
+    'usage': path.abspath(path.join(DIR_CONFIG, 'usage-article-id.yml')),
+    'upgrade': path.abspath(path.join(DIR_CONFIG, 'upgrade-article-id.yml')),
 }
 RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后重试...'
 # 每日可赠送额度分享次数上限
