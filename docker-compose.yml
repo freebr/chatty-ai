@@ -1,0 +1,22 @@
+services:
+  production:
+    build:
+      context: .
+    ports:
+      - 443           # Azure TTS, Clash, WSS
+      - 7000:7000     # APIController
+      - 8000:8000     # WebsocketController
+      - 8001:8001     # WebsocketController
+      - 8002:8002     # WebsocketController
+    volumes:
+      - ./assets:/var/www/chatty-ai/assets
+      - ./cert:/var/www/chatty-ai/cert
+      - ./config:/var/www/chatty-ai/config
+      - ./data:/var/www/chatty-ai/data
+      - ./logs:/var/www/chatty-ai/logs
+      - ./src:/var/www/chatty-ai/dist
+      - ./static:/var/www/chatty-ai/static
+    tty: true
+networks:
+  default:
+    name: chatty-ai

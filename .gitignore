@@ -1,0 +1,12 @@
+HEAD
+config
+description
+hooks/
+info/
+.deploy
+__pycache__
+!config/
+logs/*
+docs
+venv
+*.log
