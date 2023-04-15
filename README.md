@@ -23,6 +23,7 @@
 - 在 OpenAI 账号后台获取 API key，填入 `config/api-keys.yml.tmpl` 的 `Services.OpenAI`
 - 打开 `config` 中其他 `*.yml.tmpl` 文件，按照提示修改内容
 - 把 `config` 中所有 `*.yml.tmpl` 文件名的 `.tmpl` 删除
+- 如需使用讯飞 TTS（文本转语音）服务，需在 `bin/tts/xf-tts` 目录下，把 `main.c` 中的 `<appid>` 替换为讯飞 API key，然后运行 `make` 编译 `xf-tts` 程序
 
 # 部署方式
 ## 本地运行
