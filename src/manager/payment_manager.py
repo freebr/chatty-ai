@@ -70,7 +70,7 @@ class PaymentManager:
             proxy=PROXY,
         )
 
-    def create_out_trade_no():
+    def create_out_trade_no(self):
         """
         生成订单号
         """
@@ -112,6 +112,7 @@ class PaymentManager:
                     },
                 }
             else:
+                self.logger.error('生成订单 %s 时出错：%s', out_trade_no, res.get('code'))
                 return {
                     'code': -1,
                     'result': {
@@ -209,10 +210,10 @@ class PaymentManager:
             with open(self.file_path_config, 'r') as f:
                 result = yaml.load(f, Loader=yaml.FullLoader)
             if not result: raise Exception('微信支付配置加载失败')
-            self.APIV3_KEY = result['APIV3_KEY']
-            self.APPID = result['APPID']
-            self.CERT_SERIAL_NO = result['CERT_SERIAL_NO']
-            self.MCHID = result['MCHID']
+            self.APIV3_KEY = str(result['APIV3_KEY'])
+            self.APPID = str(result['APPID'])
+            self.CERT_SERIAL_NO = str(result['CERT_SERIAL_NO'])
+            self.MCHID = str(result['MCHID'])
             self.logger.info('微信支付配置加载成功')
             return True
         except Exception as e:
