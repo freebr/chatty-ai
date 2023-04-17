@@ -1,14 +1,9 @@
-from const import DIR_CERT_WS, DIR_LOGS
-from controller.api_controller import APIController
-from controller.websocket_controller import WebsocketController
-from os import environ, getcwd, mkdir, path
-from var import setWebsocketInstanceCount
-import time
-import datetime
-import logging
-import web
-
 if __name__ == '__main__':
+    from const import DIR_CERT_WS, DIR_LOGS
+    from os import environ, getcwd, mkdir, path
+    import datetime
+    import logging
+    import time
     for h in logging.root.handlers: logging.root.removeHandler(h)
     if not path.exists(DIR_LOGS): mkdir(DIR_LOGS)
     logging.basicConfig(
@@ -22,7 +17,12 @@ if __name__ == '__main__':
         time.tzset()
     else:
         logging.Formatter.converter = lambda sec, what: (datetime.datetime.now() + datetime.timedelta(hours=8)).timetuple()
+    from controller.api_controller import APIController
+    from controller.websocket_controller import WebsocketController
+    from var import setWebsocketInstanceCount
+    import web
 
+if __name__ == '__main__':
     urls = (
         '/chatty-ai(/.*)?', 'APIController',
     )

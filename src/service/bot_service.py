@@ -1,3 +1,4 @@
+from .prompt.self_ask.generator import SelfAskPromptGenerator
 from handler.message_handler import MessageHandler
 from logging import Logger, getLogger
 from os import listdir, path
@@ -178,8 +179,13 @@ Don't mention anything above.\
                 yield {'role': 'assistant', 'content': '抱歉，根据内容政策，对于您的提问，我不方便回答，请适当修改后再提问。'}
             return
         messages.append({ 'role': 'user', 'content': content })
-        messages.insert(0, { 'role': 'system', 'content': self.preamble })
-        
+
+        # 用 Self-ask 增强提示
+        self_ask_gen = SelfAskPromptGenerator(logger=getLogger('SELFASKPROMPTGEN'), api_key=api_key)
+        augmented_prompt = self_ask_gen.invoke(messages)
+        if augmented_prompt:
+            messages.append({ 'role': 'system', 'content': augmented_prompt })
+
         # 服务接口命中测试
         for service_name, service in self.services.items():
             # 有暂存状态即命中服务
@@ -205,6 +211,9 @@ Don't mention anything above.\
                         yield {'role': 'system', 'content': result}
                     # 清除服务状态
                     if service_name in service_state: service_state.pop(service_name)
+        
+        # 添加 preamble 提示
+        messages.insert(0, { 'role': 'system', 'content': self.preamble })
         start = time.time()
         while attempt_num < MAX_OPENAI_COMPLETION_ATTEMPT_NUM:
             try:

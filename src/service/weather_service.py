@@ -4,9 +4,13 @@ from logging import Logger
 from numpy import Infinity
 from pandas import DataFrame
 import json
+import re
 import requests.api as requests
 import web
 
+re_weather = re.compile((
+r'天气|气候|气温|温度|室温|外温|湿度|降水|'
+r'雨|雪|雷|雾|霜|云|风|冰|冷|热|凉'))
 class WeatherServiceBing:
     logger: Logger = None
     def __init__(self, **kwargs):
@@ -21,7 +25,7 @@ class WeatherServiceBing:
             results = []
             for region in regions:
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.63',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.39',
                 }
                 url = f'https://cn.bing.com/?q={web.urlquote(region + "天气")}'
                 res = requests.get(url, headers=headers).text
@@ -56,6 +60,7 @@ class WeatherServiceBing:
         从 message 中尝试提取天气查询信息
         如提取成功，返回 True 以及查询所需的信息，否则返回 False
         """
+        if not re.search(re_weather, message): return False, (None,)
         regions = []
         try:
             results:DataFrame = transform_text_with_addrs(text_with_addrs=message, pos_sensitive=True)
@@ -129,6 +134,7 @@ class WeatherServiceAmap:
         从 message 中尝试提取天气查询信息
         如提取成功，返回 True 以及查询所需的信息，否则返回 False
         """
+        if not re.search(re_weather, message): return False, (None,)
         date_codes = {
             '今天': 0,
             '今日': 0,

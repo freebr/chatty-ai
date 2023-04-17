@@ -46,7 +46,7 @@ class ExpressService:
             }
             headers = {
                 'Cookie': f'csrftoken={csrf_token}; WWWID={wwwid}',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.63',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.39',
             }
             res = requests.post(url, data=form_data, headers=headers).json()
             # 快递公司要求提供验证码（即收/寄件人手机号码后四位）
@@ -117,7 +117,7 @@ class ExpressService:
         # 没有匹配到快递单号，命中测试不通过
         if not found: return False, None
         results = self.extract_info(
-            system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"快递单号","company":"快递公司","phone":"用户提供的手机号或尾号"}...] 数组元素等于问题个数 不要加任何注释',
+            system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"问题中出现的快递单号，没有则为空","company":"快递公司","phone":"可选，问题中出现的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
             message=message,
         )
         if not results: return False, None
@@ -132,8 +132,8 @@ class ExpressService:
         stateful_message = []
         if state:
             extract_results = self.extract_info(
-                system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"快递单号","company":"快递公司","phone":"用户提供的手机号或尾号"}...] 数组元素等于问题个数 不要加任何注释',
-                message='结合已知信息和以下信息（可能是快递公司名称，也可能是用户提供的手机尾号）查快递：' + data,
+                system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"可选，问题中出现的快递单号，没有则为空","company":"快递公司","phone":"可选，问题中出现的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
+                message='结合已知信息和以下信息（可能是快递公司名称或用户提供的手机尾号）查快递：' + data,
                 conditions=state,
             )
             if not extract_results: return 'System enquired express info: none'

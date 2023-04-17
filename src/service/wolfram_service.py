@@ -4,12 +4,13 @@ import re
 import requests.api as requests
 import web
 
-reMaths = (r'数学|方程|等式|函数|积分|微分|导数|'
+re_maths = re.compile((
+r'数学|方程|等式|函数|积分|微分|导数|'
 r'代数|向量|张量|矩阵|行列式|特征值|'
 r'计算|化简|通分|约分|求导|求和|求解|'
 r'椭圆|圆锥|圆柱|圆台|曲线|抛物线|图像|'
 r'极限|级数|阶乘|伽马|欧拉|高斯|'
-r'\b(arc|a)?(sin|cos|tan|cot)\b|\b(exp|lg|log|pow|sqrt?)\b')
+r'\b(arc|a)?(sin|cos|tan|cot)\b|\b(exp|lg|log|pow|sqrt?)\b'))
 class WolframService:
     semantic_parse: any
     logger: Logger = None
@@ -57,7 +58,7 @@ class WolframService:
         从 message 中尝试提取问题求解信息
         如提取成功，返回 True 以及查询所需的信息，否则返回 False
         """
-        if re.search(reMaths, message):
+        if re.search(re_maths, message):
             return True, (message, 'math')
         return False, None
 
