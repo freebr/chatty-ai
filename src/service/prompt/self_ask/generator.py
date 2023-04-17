@@ -12,13 +12,16 @@ RE_FINAL_ANSWER = re.compile(r'"The final answer": "(.*)"', re.I)
 RE_SEARCH_QUESTION = re.compile(r'"Search": "(.*)"', re.I)
 SELF_ASK_PROMPT_LEVEL0 = f"""\
 1.Do not answer the question you do not need to search, just output in JSON {{"Search": "no"}}.\
-2.For daily news, time-related events and statistical data, you should always search to find out answer, just output in JSON {{"Search": "<keyword about what you want to search>"}}\
+2.For daily news, time-related events and statistical data, you should always search to find out answer, just output in JSON {{"Search": "<keyword about what you want to search>"}}.\
+3.Do not search for the same keyword each time.\
 """
 SELF_ASK_PROMPT_LEVELN = f"""\
 1.If you finally find out answer, output in JSON {{"The final answer": "<url>: <final answer>"}}.\
 2.If you are not sure about answer yet, you can search more to find answer, just output in JSON {{"Search": "<keyword about what you want to search>"}}. Do not give any other comments.\
+3.Do not search for the same keyword each time.\
 """
 
+MAX_LEVEL_SEARCH = 1
 class SelfAskPromptGenerator:
     api_key: str
     search_agent: SearchEngineAgent
@@ -58,6 +61,7 @@ class SelfAskPromptGenerator:
                 self.logger.info('无需在线搜索增强提示')
                 return
             if search:
+                if level == MAX_LEVEL_SEARCH: return
                 self.logger.info('在线搜索：%s', search)
                 messages.append({'role': 'assistant', 'content': search})
                 # 使用搜索引擎获得对 search 的回答
