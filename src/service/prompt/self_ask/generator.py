@@ -12,7 +12,7 @@ RE_FINAL_ANSWER = re.compile(r'"The final answer": "(.*)"', re.I)
 RE_SEARCH_QUESTION = re.compile(r'"Search": "(.*)"', re.I)
 SELF_ASK_PROMPT_LEVEL0 = f"""\
 1.Do not answer the question you do not need to search, just output in JSON {{"Search": "no"}}.\
-2.For daily news, events and statistical data, you should always search to find out answer, just output in JSON {{"Search": "<keyword about what you want to search>"}}\
+2.For daily news, time-related events and statistical data, you should always search to find out answer, just output in JSON {{"Search": "<keyword about what you want to search>"}}\
 """
 SELF_ASK_PROMPT_LEVELN = f"""\
 1.If you finally find out answer, output in JSON {{"The final answer": "<url>: <final answer>"}}.\
@@ -38,7 +38,7 @@ class SelfAskPromptGenerator:
             messages = []
             messages += input
             if level == 0:
-                messages[-1] = {'role': 'user', 'content': f"现在是{strftime('%Y-%m-%d %H:%M:%S', now_time)}。问题：{messages[-1]['content']}"}
+                messages[-1] = {'role': 'user', 'content': f"现在是{strftime('%Y年%m月%d日 %H:%M:%S', now_time)},请问:{messages[-1]['content']}"}
                 append_message = [{'role': 'system', 'content': SELF_ASK_PROMPT_LEVEL0}]
             else:
                 append_message = [{'role': 'system', 'content': SELF_ASK_PROMPT_LEVELN}]

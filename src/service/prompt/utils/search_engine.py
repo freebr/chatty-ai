@@ -26,16 +26,16 @@ class SearchEngineAgent:
         results = soup.select('main .b_ans.b_top')
         if len(results) != 0:
             # 将置顶搜索结果内容作为答案
-            answer = '[' + self.format_url(soup.select('main .b_ans.b_top cite')[0].text) + ']' + results[0].text
+            answer = '[' + self.format_url(soup.select('main .b_ans.b_top h2 a')[0].attrs.get('href')) + ']' + results[0].text
             return [answer]
-        results = soup.select('main .b_caption p')
+        results = soup.select('main .b_algo p')
         if len(results) == 0: return []
         # 将第一页搜索结果内容作为答案
         answers = [
             # 信息来源
-            '[' + self.format_url(soup.select('main .b_caption cite')[i].text) + ']'
+            '[' + self.format_url(soup.select('main .b_algo h2 a')[i].attrs.get('href')) + ']'
             # 信息内容
-            + soup.select('main .b_caption p')[i].text[0:50]
+            + soup.select('main .b_algo p')[i].text[0:50]
             for i in range(len(results))
         ]
         return answers
@@ -44,5 +44,5 @@ class SearchEngineAgent:
         """
         格式化 URL
         """
-        if not url.startswith('https://'): url = 'http://' + url
+        if not url.startswith('https://') and not url.startswith('http://'): url = 'http://' + url
         return url
