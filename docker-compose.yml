@@ -1,7 +1,14 @@
 services:
-  production:
+  redis:
     build:
       context: .
+      dockerfile: redis.Dockerfile
+    expose:
+      - 6379
+  api:
+    build:
+      context: .
+      dockerfile: api.Dockerfile
     ports:
       - 443           # Azure TTS, Clash, WSS
       - 7000:7000     # APIController
@@ -17,6 +24,10 @@ services:
       - ./src:/var/www/chatty-ai/dist
       - ./static:/var/www/chatty-ai/static
     tty: true
+    links:
+      - redis
+    depends_on:
+      - redis
 networks:
   default:
     name: chatty-ai

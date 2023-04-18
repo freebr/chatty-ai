@@ -1,6 +1,6 @@
 from asyncio import get_event_loop, new_event_loop, set_event_loop
 from const import \
-    QUOTA_TYPENAME_DICT,\
+    CREDIT_TYPENAME_DICT,\
     DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
     MAX_UPLOAD_IMAGES, SYSTEM_PROMPT_IMG2IMG
 from helper.formatter import fail_json, success_json
@@ -138,10 +138,10 @@ class WebsocketController:
                             self.logger.info('用户 %s 发送消息，长度：%d', openid, len(content))
                             if content.startswith('图片'):
                                 content = content[2:]
-                                quota_typename = 'image'
+                                credit_typename = 'image'
                             else:
-                                quota_typename = 'completion'
-                            match quota_typename:
+                                credit_typename = 'completion'
+                            match credit_typename:
                                 case 'image':
                                     await self.process_txt2img(ws, openid, content)
                                 case 'completion':
@@ -205,7 +205,7 @@ class WebsocketController:
         处理文本消息
         """
         # 判断是否有剩余可用次数
-        if not await self.check_remaining_quota(ws, openid, 'completion'): return
+        if not await self.check_remaining_credit(ws, openid, 'completion'): return
         # 判断是否在等待回答
         if user_mgr.get_pending(openid):
             reply = 'wait-finish'
@@ -233,11 +233,11 @@ class WebsocketController:
                 packet = ''
             # 记录对话内容
             user_mgr.record_conversation(openid, prompt, whole_message)
-            user_mgr.reduce_remaining_quota(openid, 'completion')
+            user_mgr.reduce_remaining_credit(openid, 'completion')
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
             # 检查剩余可用次数
-            await self.check_remaining_quota(ws, openid, 'completion')
+            await self.check_remaining_credit(ws, openid, 'completion')
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
@@ -249,7 +249,7 @@ class WebsocketController:
         处理文生图消息
         """
         # 判断是否有剩余可用次数
-        if not await self.check_remaining_quota(ws, openid, 'image'): return
+        if not await self.check_remaining_credit(ws, openid, 'image'): return
         # 判断是否在等待回答
         if user_mgr.get_pending(openid):
             reply = 'wait-finish'
@@ -262,9 +262,9 @@ class WebsocketController:
             await self.send_as_role(ws, result='success', role='assistant', type='image', url=url)
             # 记录对话内容
             user_mgr.record_conversation(openid, prompt, "<image>" + url)
-            user_mgr.reduce_remaining_quota(openid, 'image')
+            user_mgr.reduce_remaining_credit(openid, 'image')
             # 检查剩余可用次数
-            await self.check_remaining_quota(ws, openid, 'image')
+            await self.check_remaining_credit(ws, openid, 'image')
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
@@ -297,7 +297,7 @@ class WebsocketController:
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
-            if not await self.check_remaining_quota(ws, openid, 'image'): return
+            if not await self.check_remaining_credit(ws, openid, 'image'): return
             if not img2img_mgr.check_img2img_valid(openid): return
             if user_mgr.get_pending(openid):
                 reply = 'wait-finish'
@@ -309,28 +309,28 @@ class WebsocketController:
                 img_url = path.join(URL_IMG2IMG_EXPORT, dest_name)
                 self.logger.info('图像 url：%s', img_url)
                 await self.send_as_role(ws, result='success', role='assistant', type='image', url=img_url)
-                user_mgr.reduce_remaining_quota(openid, 'image')
+                user_mgr.reduce_remaining_credit(openid, 'image')
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
             await self.send_as_role(ws, result='fail', role='system', content=reply)
         user_mgr.set_pending(openid, False)
-        if await self.check_remaining_quota(ws, openid, 'image'):
+        if await self.check_remaining_credit(ws, openid, 'image'):
             style = img2img_mgr.get_user_image_info(openid)['style']
             reply = f'【系统提示】AI 已为您将图片转变为【{style}】的效果。如果想再画一张，请<a href=\'#\' data-message=\'{web.urlquote(prompt)}\'>点击这里</a>。<a href=\'#\' data-message=\'结束\'>返回对话模式</a>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
     
-    async def check_remaining_quota(self, ws, openid, quota_typename, wait_before_remind=True):
+    async def check_remaining_credit(self, ws, openid, credit_typename, wait_before_remind=True):
         # 判断是否有剩余可用次数，如果用完则发出提示
-        if user_mgr.get_remaining_quota(openid, quota_typename) > 0: return True
-        reply = self.get_quota_used_up_reply(openid, quota_typename)
+        if user_mgr.get_remaining_credit(openid, credit_typename) > 0: return True
+        reply = self.get_credit_used_up_reply(openid, credit_typename)
         await self.send(ws, success_json(message={"role": "system", "content": reply}))
         return False
 
-    def get_quota_used_up_reply(self, openid, type='completion'):
-            total_quota = user_mgr.get_total_quota(openid, type)
-            grant_quota = int(total_quota / 2)
+    def get_credit_used_up_reply(self, openid, type='completion'):
+            total_credit = user_mgr.get_total_credit(openid, type)
+            grant_credit = int(total_credit / 2)
             return f"""\
-❗【系统提示】您的 {total_quota} 次{QUOTA_TYPENAME_DICT[type]}使用额度已用完~
-ℹ️如果您觉得AI对您有帮助，还请点击下方分享按钮转发给朋友，对方点击进入后即分享成功，每成功一次可再奖励 {grant_quota} 次额度哦~感谢支持！\
+❗【系统提示】您的 {total_credit} 次{CREDIT_TYPENAME_DICT[type]}使用额度已用完~
+ℹ️如果您觉得AI对您有帮助，还请点击下方分享按钮转发给朋友，对方点击进入后即分享成功，每成功一次可再奖励 {grant_credit} 次额度哦~感谢支持！\
 """

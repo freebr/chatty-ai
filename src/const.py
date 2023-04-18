@@ -41,9 +41,12 @@ RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后�
 MAX_DAY_SHARE_COUNT = 5
 # 图生图一次最大上传图片数
 MAX_UPLOAD_IMAGES = 1
-# 赠送额度系数
-QUOTA_GRANT_SCALE = 0.9
-QUOTA_TYPENAME_DICT = {
+# 分享赠送额度系数
+SHARE_GRANT_CREDIT_SCALE = 0.9
+# 签到赠送额度系数
+SIGNUP_GRANT_CREDIT_SCALE = 0.5
+
+CREDIT_TYPENAME_DICT = {
     'completion': '对话',
     'image': '图片生成',
 }

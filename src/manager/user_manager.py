@@ -1,13 +1,19 @@
-from const import DIR_USERS
+from const import DIR_USERS, CREDIT_TYPENAME_DICT
 from helper.formatter import now
-from os import path
 from logging import Logger
+from os import path
 import json
+import redis
+import time
 import uuid
 
+KEY_USER_OPENID = 'USERS'
+KEY_USER_INFO = 'USER:%s'
+EXCLUDED_DUMP_KEYS = ['ws']
 class UserManager:
-    default_quota:dict
-    default_quota_vip:dict
+    cache: redis.StrictRedis
+    default_credit:dict
+    default_credit_vip:dict
     # VIP 等级
     vip_levels:list
     # VIP 价格
@@ -25,6 +31,7 @@ class UserManager:
 
     def __init__(self, **kwargs):
         self.logger = kwargs['logger']
+        self.cache = kwargs['cache']
         self.users = {}
         self.vip_levels = kwargs['vip_levels']
         self.vip_prices = {}
@@ -35,13 +42,14 @@ class UserManager:
         self.free_level = kwargs['free_level']
         self.highest_level = kwargs['highest_level']
         self.vip_dict = {level: [] for level in self.vip_levels}
-        self.default_quota = {}
-        self.default_quota_vip = {level: {} for level in self.vip_levels}
-        for type in ['completion', 'image']:
-            self.default_quota[type] = kwargs['quota'][self.free_level][type]
+        self.default_credit = {}
+        self.default_credit_vip = {level: {} for level in self.vip_levels}
+        for type in CREDIT_TYPENAME_DICT:
+            self.default_credit[type] = kwargs['credit'][self.free_level][type]
             for level in self.vip_levels:
-                self.default_quota_vip[level][type] = kwargs['quota'][level][type]
+                self.default_credit_vip[level][type] = kwargs['credit'][level][type]
         self.read_vip_list()
+        self.load_all_users()
 
     def register_user(self, openid):
         """
@@ -61,48 +69,67 @@ class UserManager:
             'pending': False,
             'img2img_mode': False,
             'voice_role': None,
-            'total_quota': {},
-            'remaining_quota': {},
+            'total_credit': {},
+            'remaining_credit': {},
             'service_state': {},
             'code_list': {},
-            'day_share_count': 0,
+            'daily_data': self.get_initial_daily_data(),
             'invited_users': [],
-            'wx_user_info': None,
+            'wx_user_info': {},
             'ws': None,
         }
-        for type in ['completion', 'image']:
+        for type in CREDIT_TYPENAME_DICT:
             level = self.get_vip_level(openid)
-            self.set_total_quota(openid, type, self.default_quota[type] if level == self.free_level else self.default_quota_vip[level][type])
-            self.reset_remaining_quota(openid, type)
+            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+            self.reset_remaining_credit(openid, type)
+        self.dump_user(openid)
         return self.users[openid]
 
     def reset_user(self, openid):
         """
         重置指定用户的全部信息
         """
-        user = self.users[openid]
-        user['login_time'] = None
-        user['conversation_id'] = None
-        user['parent_id'] = None
-        user['pending'] = False
-        user['img2img_mode'] = False
-        user['records'].clear()
-        user['service_state'].clear()
-        user['code_list'].clear()
-        user['day_share_count'] = 0
-        user['invited_users'].clear()
-        user['wx_user_info'] = None
-        if user['ws']:
-            user['ws'].close(reason='reset')
+        user: dict = self.users[openid]
+        ws = user.get('ws')
+        user.update({
+            'login_time': None,
+            'conversation_id': None,
+            'parent_id': None,
+            'pending': False,
+            'img2img_mode': False,
+            'records': '',
+            'service_state': '',
+            'code_list': '',
+            'daily_data': self.get_initial_daily_data(),
+            'invited_users': '',
+            'wx_user_info': '',
+            'ws': None,
+        })
+        if ws: ws.close(reason='reset')
         user['ws'] = None
+        for type in CREDIT_TYPENAME_DICT:
+            level = self.get_vip_level(openid)
+            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+            self.reset_remaining_credit(openid, type)
+        self.dump_user(openid)
         return True
+
+    def get_initial_daily_data(self):
+        """
+        返回初始的每日数据字典
+        """
+        return {
+            'day_share_count': 0,
+            'signup': False,
+        }
 
     def reset_daily_data(self, openid):
         """
         重置指定用户的每日数据
         """
         user = self.users[openid]
-        user['day_share_count'] = 0
+        user['daily_data'] = self.get_initial_daily_data()
+        self.dump_user(openid)
         return True
 
     def reset_all_daily_data(self):
@@ -112,16 +139,6 @@ class UserManager:
         for openid in self.users:
             if not self.reset_daily_data(openid): return False
         return True
-
-    def record_conversation(self, openid, input, output):
-        """
-        记录指定用户的对话
-        """
-        if openid not in self.users: self.register_user(openid)
-        self.users[openid]['records'].append({
-            'input': input,
-            'output': output,
-        })
 
     def get_last_conversations(self, openid, count=5):
         """
@@ -134,6 +151,17 @@ class UserManager:
             ret.append({ 'role': 'user', 'content': record['input'] })
             ret.append({ 'role': 'assistant', 'content': record['output'] })
         return ret
+
+    def record_conversation(self, openid, input, output):
+        """
+        记录指定用户的对话
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['records'].append({
+            'input': input,
+            'output': output,
+        })
+        self.dump_user(openid)
 
     def clear_conversation(self, openid):
         """
@@ -150,15 +178,12 @@ class UserManager:
             self.logger.info('用户 %s 的对话已清空', openid)
         return True
 
-    def get_user_info(self, openid):
+    def get_pending(self, openid):
         """
-        获取指定用户对话信息
+        获取指定用户的等待状态
         """
-        if openid not in self.users: return (None, None)
-        return (
-            self.users[openid]['conversation_id'],
-            self.users[openid]['parent_id'],
-        )
+        if openid not in self.users: return False
+        return self.users[openid]['pending']
 
     def set_pending(self, openid, pending):
         """
@@ -170,20 +195,7 @@ class UserManager:
         else:
             if openid not in self.users: self.register_user(openid)
             self.users[openid]['pending'] = pending
-
-    def get_pending(self, openid):
-        """
-        获取指定用户的等待状态
-        """
-        if openid not in self.users: return False
-        return self.users[openid]['pending']
-
-    def set_img2img_mode(self, openid, value):
-        """
-        设置指定用户的图生图模式
-        """
-        if openid not in self.users: self.register_user(openid)
-        self.users[openid]['img2img_mode'] = value
+        self.dump_user(openid)
 
     def get_img2img_mode(self, openid):
         """
@@ -192,12 +204,13 @@ class UserManager:
         if openid not in self.users: return False
         return self.users[openid]['img2img_mode']
 
-    def set_voice_name(self, openid, role):
+    def set_img2img_mode(self, openid, value):
         """
-        设置指定用户的语音对话角色名
+        设置指定用户的图生图模式
         """
         if openid not in self.users: self.register_user(openid)
-        self.users[openid]['voice_role'] = role
+        self.users[openid]['img2img_mode'] = value
+        self.dump_user(openid)
 
     def get_voice_name(self, openid):
         """
@@ -206,64 +219,76 @@ class UserManager:
         if openid not in self.users: return
         return self.users[openid]['voice_role']
 
-    def reduce_remaining_quota(self, openid, type):
+    def set_voice_name(self, openid, role):
+        """
+        设置指定用户的语音对话角色名
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['voice_role'] = role
+        self.dump_user(openid)
+
+    def reduce_remaining_credit(self, openid, type):
         """
         使指定用户的指定类型的可用次数减一
         """
         if openid not in self.users: return False
-        if type not in ['completion', 'image']: return False
-        if self.users[openid]['remaining_quota'][type] <= 0: return False
-        self.users[openid]['remaining_quota'][type] -= 1
+        if type not in CREDIT_TYPENAME_DICT: return False
+        if self.users[openid]['remaining_credit'][type] <= 0: return False
+        self.users[openid]['remaining_credit'][type] -= 1
+        self.dump_user(openid)
         return True
 
-    def get_remaining_quota(self, openid, type):
+    def get_remaining_credit(self, openid, type):
         """
         获取指定用户的指定类型的剩余可用次数
         """
         if openid not in self.users:
             level = self.get_vip_level(openid)
             if level == self.free_level:
-                return self.default_quota[type]
-            return self.default_quota_vip[level][type]
-        if type not in ['completion', 'image']: return 0
-        return self.users[openid]['remaining_quota'][type]
+                return self.default_credit[type]
+            return self.default_credit_vip[level][type]
+        if type not in CREDIT_TYPENAME_DICT: return 0
+        return self.users[openid]['remaining_credit'][type]
 
-    def set_remaining_quota(self, openid, type, value=0):
+    def set_remaining_credit(self, openid, type, value=0):
         """
         设置指定用户的指定类型的剩余可用次数
         """
         if openid not in self.users: return False
-        if type not in ['completion', 'image']: return False
-        self.users[openid]['remaining_quota'][type] = value
+        if type not in CREDIT_TYPENAME_DICT: return False
+        self.users[openid]['remaining_credit'][type] = value
+        self.dump_user(openid)
         return True
 
-    def reset_remaining_quota(self, openid, type):
+    def reset_remaining_credit(self, openid, type):
         """
         重置指定用户的指定类型的剩余可用次数为默认次数
         """
         if openid not in self.users: return False
-        if type not in ['completion', 'image']: return False
+        if type not in CREDIT_TYPENAME_DICT: return False
         level = self.get_vip_level(openid)
-        self.users[openid]['remaining_quota'][type] = self.default_quota[type] if level == self.free_level else self.default_quota_vip[level][type]
+        self.users[openid]['remaining_credit'][type] = self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type]
+        self.dump_user(openid)
         return True
 
-    def get_total_quota(self, openid, type):
+    def get_total_credit(self, openid, type):
         """
         获取指定用户的指定类型的总可用次数
         """
         if openid not in self.users:
             level = self.get_vip_level(openid)
-            return self.default_quota[type] if level == self.free_level else self.default_quota_vip[level][type]
-        if type not in ['completion', 'image']: return 0
-        return self.users[openid]['total_quota'][type]
+            return self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type]
+        if type not in CREDIT_TYPENAME_DICT: return 0
+        return self.users[openid]['total_credit'][type]
 
-    def set_total_quota(self, openid, type, value=0):
+    def set_total_credit(self, openid, type, value=0):
         """
         设置指定用户的指定类型的总可用次数
         """
         if openid not in self.users: return False
-        if type not in ['completion', 'image']: return False
-        self.users[openid]['total_quota'][type] = value
+        if type not in CREDIT_TYPENAME_DICT: return False
+        self.users[openid]['total_credit'][type] = value
+        self.dump_user(openid)
         return True
 
     def get_wx_user_info(self, openid):
@@ -279,6 +304,7 @@ class UserManager:
         """
         if openid not in self.users: self.register_user(openid)
         self.users[openid]['wx_user_info'] = value
+        self.dump_user(openid)
 
     def get_ws(self, openid):
         """
@@ -299,14 +325,30 @@ class UserManager:
         获取指定用户的本日分享次数
         """
         if openid not in self.users: return 0
-        return self.users[openid]['day_share_count']
+        return self.users[openid]['daily_data']['day_share_count']
 
-    def set_day_share_count(self, openid, value):
+    def set_day_share_count(self, openid, value: int):
         """
         设置指定用户的本日分享次数
         """
         if openid not in self.users: self.register_user(openid)
-        self.users[openid]['day_share_count'] = value
+        self.users[openid]['daily_data']['day_share_count'] = value
+        self.dump_user(openid)
+
+    def get_signup(self, openid):
+        """
+        获取指定用户的本日签到标志
+        """
+        if openid not in self.users: return False
+        return self.users[openid]['daily_data']['signup']
+
+    def set_signup(self, openid, value: bool):
+        """
+        设置指定用户的本日签到标志
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['daily_data']['signup'] = value
+        self.dump_user(openid)
 
     def is_invited_user(self, openid, invited_open_id):
         """
@@ -321,6 +363,7 @@ class UserManager:
         """
         if openid not in self.users: self.register_user(openid)
         self.users[openid]['invited_users'].append(invited_open_id)
+        self.dump_user(openid)
         
     def read_vip_list(self):
         if not path.isfile(self.vip_file_path):
@@ -364,9 +407,9 @@ class UserManager:
         if level not in self.vip_levels: return False
         self.remove_vip(openid)
         self.vip_dict[level].append(openid)
-        for type in ['completion', 'image']:
-            self.set_total_quota(openid, type, self.default_quota[type] if level == self.free_level else self.default_quota_vip[level][type])
-            self.reset_remaining_quota(openid, type)
+        for type in CREDIT_TYPENAME_DICT:
+            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+            self.reset_remaining_credit(openid, type)
         self.save_vip_list()
         return True
 
@@ -386,6 +429,7 @@ class UserManager:
         if openid not in self.users: return False
         key = str(uuid.uuid3(uuid.uuid4(), openid))
         self.users[openid]['code_list'][key] = data
+        self.dump_user(openid)
         return True, key
 
     def pop_code_list(self, openid, key):
@@ -394,7 +438,9 @@ class UserManager:
         """
         if openid not in self.users: return False
         if key not in self.users[openid]['code_list']: return False
-        return True, self.users[openid]['code_list'].pop(key)
+        data = self.users[openid]['code_list'].pop(key)
+        self.dump_user(openid)
+        return True, data
 
     def get_code_list_item(self, openid, key):
         """
@@ -422,7 +468,69 @@ class UserManager:
         if openid not in self.users: return -1
         return self.users[openid]['login_time']
 
-    def grant_quota(self, openid, quota_type, grant_quota):
-        remaining_quota = self.get_remaining_quota(openid, quota_type)
-        self.set_remaining_quota(openid, quota_type, remaining_quota + grant_quota)
+    def grant_credit(self, openid, credit_type, grant_credit):
+        remaining_credit = self.get_remaining_credit(openid, credit_type)
+        self.set_remaining_credit(openid, credit_type, remaining_credit + grant_credit)
+        return True
+
+    def get_login_user_list(self):
+        """
+        返回全部已登录用户信息
+        """
+        infos = {}
+        for openid in self.users:
+            infos[openid] = {}
+            for key in self.users[openid]:
+                if key in EXCLUDED_DUMP_KEYS: continue
+                infos[openid][key] = self.users[openid][key]
+        return infos
+
+    def dump_user(self, openid):
+        """
+        转储指定用户信息到 Redis
+        """
+        if openid not in self.users: return False
+        user = {}
+        for key in self.users[openid]:
+            if key in EXCLUDED_DUMP_KEYS: continue
+            user[key] = self.users[openid][key]
+        self.cache.set(KEY_USER_INFO % openid, json.dumps(user, ensure_ascii=False))
+        self.cache.hset(KEY_USER_OPENID, openid, time.time())
+        return True
+
+    def dump_all_users(self):
+        """
+        转储全部用户信息到 Redis
+        """
+        for openid in self.users:
+            ret = self.dump_user(openid)
+            if not ret: self.logger.error('转储用户信息时失败：openid=%s', openid)
+        self.logger.info('转储全部用户信息成功')
+        return True
+
+    def load_user(self, openid):
+        """
+        从 Redis 加载指定用户信息
+        """
+        data = self.cache.get(KEY_USER_INFO % openid)
+        if data is None: return False
+        try:
+            user = json.loads(data)
+        except Exception as e:
+            self.logger.error('加载用户信息时失败：openid=%s, e=%s', openid, str(e))
+            return False
+        ret = self.users.get(openid, {})
+        for key in user:
+            ret[key] = user[key]
+        self.users[openid] = ret
+        return True
+
+    def load_all_users(self):
+        """
+        从 Redis 加载全部用户信息
+        """
+        openids = self.cache.hkeys(KEY_USER_OPENID)
+        for openid in openids:
+            self.load_user(openid)
+        self.logger.info('加载用户信息成功，数量：%d', len(openids))
         return True

@@ -1,4 +1,6 @@
 import _thread
+import os
+import redis
 from const import DIR_CONFIG, DIR_IMAGES_IMG2IMG
 from logging import getLogger
 from manager.img2img_manager import Img2ImgManager
@@ -9,6 +11,19 @@ from manager.wx_access_token_manager import WxAccessTokenManager
 from numpy import Infinity
 from service.bot_service import BotService
 
+# 开启 Websocket 服务器的数量
+COUNT_WEBSOCKET_INSTANCE = 1
+def setWebsocketInstanceCount(new_count:int):
+    global COUNT_WEBSOCKET_INSTANCE
+    if not 1 < new_count < 100: return
+    COUNT_WEBSOCKET_INSTANCE = new_count
+
+def getWebsocketInstanceCount():
+    return COUNT_WEBSOCKET_INSTANCE
+
+def isDocker():
+    return os.path.exists('/.dockerenv')
+
 key_token_mgr = KeyTokenManager(
     logger=getLogger('KEYTOKENMGR'),
     workdir=DIR_CONFIG,
@@ -17,6 +32,7 @@ APP_PARAM = {
     name: key_token_mgr.configs.get('api_keys').get('App').get(name)
     for name in ['APPID', 'APPSECRET', 'APPTOKEN', 'ENCODING_AES_KEY']
 }
+cache = redis.StrictRedis(host=('redis' if isDocker() else '127.0.0.1'), port=6379, db=0, password=key_token_mgr.configs.get('api_keys').get('Redis')[0], decode_responses=True)
 bot = BotService(
     logger=getLogger('BOT'),
     access_tokens=key_token_mgr.configs.get('access_tokens').get('Services'),
@@ -29,6 +45,7 @@ img2img_mgr = Img2ImgManager(
 )
 user_mgr = UserManager(
     logger=getLogger('USERMGR'),
+    cache=cache,
     vip_levels=[
         '白银',
         '黄金',
@@ -46,7 +63,7 @@ user_mgr = UserManager(
         '可享受无限期500次体验额度（额度用完后，观看广告可自动获得新的500次额度）',
         '可享受无限次体验文字和图片生成服务，无需观看广告',
     ],
-    quota={
+    credit={
         '青铜': {
             'completion': 10,
             'image': 10,
@@ -76,13 +93,3 @@ wx_access_token_mgr = WxAccessTokenManager(
     APPSECRET=APP_PARAM['APPSECRET'],
 )
 wx_access_token_mgr.start(lambda access_token: (key_token_mgr.configs.get('access_tokens').update({'WeChat': access_token}), key_token_mgr.save('access_tokens')))
-
-# 开启 Websocket 服务器的数量
-COUNT_WEBSOCKET_INSTANCE = 1
-def setWebsocketInstanceCount(new_count:int):
-    global COUNT_WEBSOCKET_INSTANCE
-    if not 1 < new_count < 100: return
-    COUNT_WEBSOCKET_INSTANCE = new_count
-
-def getWebsocketInstanceCount():
-    return COUNT_WEBSOCKET_INSTANCE
