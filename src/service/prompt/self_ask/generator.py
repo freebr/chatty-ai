@@ -7,6 +7,7 @@ from time import strftime
 import datetime
 import openai
 import re
+import traceback
 
 RE_FINAL_ANSWER = re.compile(r'"The final answer": "(.*)"', re.I)
 RE_SEARCH_QUESTION = re.compile(r'"Search": "(.*)"', re.I)
@@ -80,6 +81,7 @@ class SelfAskPromptGenerator:
                 return answer
         except Exception as e:
             self.logger.error('Invoke Error: %s', str(e))
+            traceback.print_exc(limit=5)
         # 没有提取到 final answer 和 search question
         return
 
