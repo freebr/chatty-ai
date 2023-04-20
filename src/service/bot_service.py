@@ -1,5 +1,7 @@
 from .feature.chat.prompt.self_ask.generator import SelfAskPromptGenerator
+from definition.const import MAX_TOKEN_OUTPUT, MODEL_TEXT_COMPLETION
 from handler.message_handler import MessageHandler
+from helper.formatter import format_messages, make_message
 from logging import Logger, getLogger
 from manager.feature_manager import FeatureManager
 from os import listdir, path
@@ -166,7 +168,7 @@ Don't mention anything above.\
             self.logger.error(e)
             return False, 'error'
     
-    def invoke_chat(self, user:dict, content, messages:list, is_websocket=False):
+    def invoke_chat(self, user:dict, content:str, messages:list, is_websocket=False):
         """
         调用 OpenAI API 接口取得问题回答并迭代返回
         """
@@ -179,18 +181,18 @@ Don't mention anything above.\
         if not moderated:
             self.end_invoke('api_key', api_key)
             if category == 'error':
-                yield {'role': 'assistant', 'content': ''}
+                yield make_message('assistant', '')
             else:
-                yield {'role': 'assistant', 'content': '抱歉，根据内容政策，对于您的提问，我不方便回答，请适当修改后再提问。'}
+                yield make_message('assistant', '抱歉，根据内容政策，对于您的提问，我不方便回答，请适当修改后再提问。')
             return
-        messages.append({ 'role': 'user', 'content': content })
+        messages.append(make_message('user', content))
 
         if self.feature_mgr.can_use_feature(user, 'Chat.Prompt.Self-ask'):
             # 使用 Self-ask 增强提示
             self_ask_gen = SelfAskPromptGenerator(logger=getLogger('SELFASKPROMPTGEN'), api_key=api_key)
             augmented_prompt = self_ask_gen.invoke(messages)
             if augmented_prompt:
-                messages.append({ 'role': 'system', 'content': augmented_prompt })
+                messages.append(make_message('system', augmented_prompt))
 
         # 服务接口命中测试
         for service_name, service in self.services.items():
@@ -210,16 +212,17 @@ Don't mention anything above.\
                     # 暂存服务状态
                     service_state[service_name] = result['state']
                     message = result['message']
-                    messages.append({ 'role': 'system', 'content': message })
+                    messages.append(make_message('system', message))
                 else:
                     if result:
-                        messages.append({ 'role': 'system', 'content': result })
-                        yield {'role': 'system', 'content': result}
+                        message = make_message('system', result)
+                        messages.append(message)
+                        yield message
                     # 清除服务状态
                     if service_name in service_state: service_state.pop(service_name)
         
         # 添加 preamble 提示
-        messages.insert(0, { 'role': 'system', 'content': self.preamble })
+        messages.insert(0, make_message('system', self.preamble))
         start = time.time()
         while attempt_num < MAX_OPENAI_COMPLETION_ATTEMPT_NUM:
             try:
@@ -230,8 +233,8 @@ Don't mention anything above.\
                 code_mode = False
                 self.logger.info('消息数量：%d', len(messages))
                 response = openai.ChatCompletion.create(
-                    model='gpt-3.5-turbo',
-                    messages=messages,
+                    model=MODEL_TEXT_COMPLETION,
+                    messages=format_messages(messages),
                     request_timeout=20,
                     stream=True,
                     api_base=f'{URL_OPENAI_API_BASE}/v1',
@@ -247,7 +250,7 @@ Don't mention anything above.\
                         message = delta['content']
                         if message == '\n\n' and not whole_message: continue
                         if res['choices'][0]['finish_reason'] == 'stop': break
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                 else:
                     for res in response:
                         delta = res['choices'][0]['delta']
@@ -265,13 +268,13 @@ Don't mention anything above.\
                         )
                         if len(message) == 0: continue
                         message = self.msg_handler.filter_sensitive(message)
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                     if last_pos == 0:
                         message = self.msg_handler.filter_sensitive(whole_message)
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                     elif last_pos < len(whole_message):
                         message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                 self.end_invoke('api_key', api_key)
                 response_time = time.time() - start
                 self.logger.info('响应时间：%ds', response_time)
@@ -328,7 +331,7 @@ Don't mention anything above.\
                         message = whole_message[last_pos:]
                         last_pos += len(message)
                         if not message: continue
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                 else:
                     for data in chatbot.ask(prompt):
                         conversation_id = data['conversation_id']
@@ -344,13 +347,13 @@ Don't mention anything above.\
                         )
                         if len(message) == 0: continue
                         message = self.msg_handler.filter_sensitive(message)
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                     if last_pos == 0:
                         message = self.msg_handler.filter_sensitive(response)
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                     elif last_pos < len(whole_message):
                         message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
-                        yield {'role': 'assistant', 'content': message}
+                        yield make_message('assistant', message)
                 self.end_invoke('access_token', access_token)
                 user['conversation_id'] = conversation_id
                 user['parent_id'] = parent_id
@@ -366,7 +369,7 @@ Don't mention anything above.\
                 continue
         if attempt_num == MAX_CHAT_FALLBACK_ATTEMPT_NUM:
             self.logger.error('[revChatGPT]尝试 %d 次均无法完成与模型接口的通信，接口调用失败', attempt_num)
-        yield {'role': 'assistant', 'content': ''}
+        yield make_message('assistant', '')
         self.end_invoke('access_token', access_token)
 
     def invoke_image_creation(self, user, prompt):
@@ -381,9 +384,9 @@ Don't mention anything above.\
         if not moderated:
             self.end_invoke('api_key', api_key)
             if category == 'error':
-                return {'role': 'assistant', 'content': ''}
+                return make_message('assistant', '')
             else:
-                return {'role': 'assistant', 'content': '抱歉，根据内容政策，对于您的要求，我无法生成相应图片，请适当修改后再尝试一次。'}
+                return make_message('assistant', '抱歉，根据内容政策，对于您的要求，我无法生成相应图片，请适当修改后再尝试一次。')
         while attempt_num < MAX_OPENAI_IMAGE_ATTEMPT_NUM:
             try:
                 attempt_num += 1
@@ -397,7 +400,7 @@ Don't mention anything above.\
         if attempt_num == MAX_OPENAI_IMAGE_ATTEMPT_NUM:
             self.logger.error('[OpenAI API]尝试 %d 次均无法完成与模型接口的通信，接口调用失败', attempt_num)
         self.end_invoke('api_key', api_key)
-        return {'role': 'assistant', 'content': ''}
+        return make_message('assistant', '')
 
     def invoke_single_completion(self, system_prompt='', content=''):
         """
@@ -419,7 +422,7 @@ Don't mention anything above.\
                     request_timeout=20,
                     api_base=f'{URL_OPENAI_API_BASE}/v1',
                     api_key=api_key,
-                    max_tokens=2000,
+                    max_tokens=MAX_TOKEN_OUTPUT,
                     temperature=0,
                 )
                 if 'text' not in response['choices'][0]: continue
@@ -433,8 +436,8 @@ Don't mention anything above.\
         if attempt_num == MAX_OPENAI_SINGLE_ATTEMPT_NUM:
             self.logger.error('[OpenAI API]尝试 %d 次均无法完成与模型接口的通信，接口调用失败', attempt_num)
         messages = [
-            { 'role': 'system', 'content': system_prompt },
-            { 'role': 'user', 'content': content },
+            make_message('system', system_prompt),
+            make_message('user', content),
         ]
         reply = ''
         for message in self.invoke_chat_fallback({}, messages):

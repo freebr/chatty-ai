@@ -1,5 +1,5 @@
 from .qrcode_manager import QRCodeManager
-from const import DIR_CERT_WXPAY, DIR_CONFIG, DIR_IMAGES_TEMPLATE, DIR_USERS
+from definition.const import DIR_CERT_WXPAY, DIR_CONFIG, DIR_IMAGES_TEMPLATE, DIR_USERS
 from logging import Logger
 from os import environ, mkdir, path
 from PIL import Image

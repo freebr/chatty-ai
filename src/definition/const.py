@@ -36,11 +36,18 @@ BASE_ARTICLE_FILES = {
     'usage': path.abspath(path.join(DIR_CONFIG, 'usage-article-id.yml')),
     'upgrade': path.abspath(path.join(DIR_CONFIG, 'upgrade-article-id.yml')),
 }
+RESPONSE_EXCEED_TOKEN_LIMIT = '【系统提示】您的消息长度超出 token 限制（%d/%d），请适当删减后再提问！🤗'
 RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后重试...'
 # 每日可赠送额度分享次数上限
 MAX_DAY_SHARE_COUNT = 5
 # 图生图一次最大上传图片数
 MAX_UPLOAD_IMAGES = 1
+# 文本生成上下文加输入的最大token数
+MAX_TOKEN_INPUT_CONTEXT = 2096
+# 文本生成单个输出最大token数
+MAX_TOKEN_OUTPUT = 2000
+# 文本生成使用的模型名称
+MODEL_TEXT_COMPLETION = 'gpt-3.5-turbo-0301'
 # 分享赠送额度系数
 SHARE_GRANT_CREDIT_SCALE = 0.9
 # 签到赠送额度系数

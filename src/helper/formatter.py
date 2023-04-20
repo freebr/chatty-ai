@@ -1,6 +1,9 @@
 import datetime
 import web
 import json
+from .token_counter import count_string_tokens
+from definition.const import MODEL_TEXT_COMPLETION
+from typing import List, Dict
 
 def convert_encoding(text = ''):
     """
@@ -34,6 +37,18 @@ def fail_json(**kwargs):
     }
     if kwargs != {}: ret['detail'] = kwargs
     return json.dumps(ret, ensure_ascii=False)
+
+def make_message(role, content):
+    """
+    返回一条消息记录
+    """
+    return {'role': role, 'content': content, '__token': count_string_tokens(content, MODEL_TEXT_COMPLETION)}
+
+def format_messages(messages: List[Dict[str, str]]):
+    """
+    为 OpenAI 接口格式化消息记录
+    """
+    return [{'role': message['role'], 'content': message['content'] } for message in messages]
 
 def now():
     return datetime.datetime.now().ctime()

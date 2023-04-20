@@ -1,14 +1,19 @@
 from asyncio import new_event_loop, set_event_loop, get_event_loop
-from const import \
-    BASE_ARTICLE_FILES, DEBUG_MODE, RESPONSE_ERROR_RAISED,\
-    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT,\
+from crypt.WXBizMsgCrypt import WXBizMsgCrypt
+from definition.const import \
+    BASE_ARTICLE_FILES, DEBUG_MODE,\
+    MAX_DAY_SHARE_COUNT, MAX_TOKEN_INPUT_CONTEXT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT,\
     DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_DALLE, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
-    SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT, RESPONSE_NO_DEBUG_CODE,\
+    SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
+    RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
     MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
     URL_CLASH_SERVER, URL_PUSH_ARTICLE_COVER_IMAGE, URL_PUSH_LINK_COVER_IMAGE, URL_SITE_BASE, URL_WEIXIN_BASE
-from crypt.WXBizMsgCrypt import WXBizMsgCrypt
+from definition.var import \
+    bot,\
+    key_token_mgr, img2img_mgr, user_mgr,\
+    APP_PARAM
 from handler.code_snippet_handler import CodeSnippetHandler
-from helper.formatter import convert_encoding, get_query_string, success_json, fail_json
+from helper.formatter import convert_encoding, fail_json, get_query_string, make_message, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
 from manager.article_manager import ArticleManager
 from manager.autoreply_manager import AutoReplyManager
@@ -18,10 +23,6 @@ from manager.poster_manager import PosterManager
 from manager.voices_manager import VoicesManager
 from manager.wxjsapi_manager import WxJsApiManager
 from numpy import Infinity
-from var import \
-    bot,\
-    key_token_mgr, img2img_mgr, user_mgr,\
-    APP_PARAM
 import _thread
 import hashlib
 import json
@@ -304,7 +305,7 @@ class APIController:
                     credit_typename = 'completion'
                 match credit_typename:
                     case 'image':
-                        self.process_text2img(openid, content)
+                        self.process_txt2img(openid, content)
                     case 'completion':
                         self.process_chat(openid, content)
         return
@@ -370,6 +371,15 @@ class APIController:
         if user_mgr.get_pending(openid):
             reply = '【系统提示】请先等我回答完~'
         else:
+            user_message = make_message('user', prompt)
+            token_prompt = user_message['__token']
+            self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
+            if token_prompt > MAX_TOKEN_INPUT_CONTEXT:
+                # 超出 token 数限制
+                reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_INPUT_CONTEXT)
+                self.send_message(openid, reply, send_as_text=True)
+                return
+            user_mgr.add_message(openid, user_message)
             user_mgr.set_pending(openid, True)
             whole_message = ''
             try:
@@ -379,17 +389,17 @@ class APIController:
                     (openid, WAIT_TIMEOUT, reply_result, '【系统提示】线路过于繁忙，可能需要较长时间，请您稍等……')
                 )
                 last_sent_time = 0
-                messages = user_mgr.get_last_conversations(openid, 20)
                 voice_name = user_mgr.get_voice_name(openid)
                 if voice_name and voices_info[voice_name][-2] == 'en':
                     # 若选择的语音角色说英语，则给出用英语回答的提示
-                    messages.append({'role': 'user', 'content': 'Please answer in English.'})
+                    prompt += '\nPlease answer in English.'
+                messages = user_mgr.clip_conversations(openid, MAX_TOKEN_INPUT_CONTEXT - token_prompt)
                 for message in bot.invoke_chat(user_mgr.users[openid], prompt, messages):
                     reply = message['content']
                     if not reply: raise Exception('接口调用失败')
                     # 系统消息，只记录不发送
                     if message['role'] == 'system':
-                        user_mgr.record_conversation(openid, prompt, reply)
+                        user_mgr.add_message(openid, message)
                         continue
                     reply_result['is_respond'] = True
                     self.set_typing(openid, True)
@@ -432,7 +442,7 @@ class APIController:
                         if not reply.startswith('```'): continue
                         if not self.process_snippet(openid, reply): continue
                 # 记录对话内容
-                user_mgr.record_conversation(openid, prompt, whole_message)
+                user_mgr.add_message(openid, make_message('assistant', whole_message))
                 user_mgr.reduce_remaining_credit(openid, 'completion')
                 self.set_typing(openid, False)
                 reply = None
@@ -440,7 +450,7 @@ class APIController:
                 self.logger.error(e)
                 reply = RESPONSE_ERROR_RAISED
                 reply_result['is_respond'] = True
-                user_mgr.record_conversation(openid, prompt, whole_message)
+                user_mgr.add_message(openid, make_message('assistant', whole_message))
             user_mgr.set_pending(openid, False)
             self.set_typing(openid, False)
         if reply:
@@ -460,7 +470,7 @@ class APIController:
         self.push_link(openid, title, description, url)
         return True
     
-    def process_text2img(self, openid, prompt):
+    def process_txt2img(self, openid, prompt):
         """
         处理文生图指令
         """
@@ -493,14 +503,16 @@ class APIController:
             if media_id:
                 self.logger.info('图像 media_id：%s', media_id)
                 self.send_image(openid, media_id)
+                # 记录对话内容
+                user_mgr.add_message(openid, make_message('assistant', '<image>' + img_url))
                 user_mgr.reduce_remaining_credit(openid, 'image')
+                self.check_remaining_credit(openid, 'image')
         except Exception as e:
             self.logger.error(e)
             reply = RESPONSE_ERROR_RAISED
             self.send_message(openid, reply, send_as_text=True)
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
-        self.check_remaining_credit(openid, 'image')
     
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)

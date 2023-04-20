@@ -1,4 +1,4 @@
-from const import DIR_IMAGES_TEMPLATE, DIR_IMAGES_POSTER
+from definition.const import DIR_IMAGES_TEMPLATE, DIR_IMAGES_POSTER
 from PIL import Image, ImageDraw, ImageFont
 from logging import Logger
 from manager.qrcode_manager import QRCodeManager

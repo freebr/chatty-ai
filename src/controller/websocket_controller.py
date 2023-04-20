@@ -1,14 +1,14 @@
 from asyncio import get_event_loop, new_event_loop, set_event_loop
-from const import \
-    CREDIT_TYPENAME_DICT,\
-    DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
-    MAX_UPLOAD_IMAGES, SYSTEM_PROMPT_IMG2IMG
-from helper.formatter import fail_json, success_json
+from helper.formatter import fail_json, make_message, success_json
 from logging import Logger, getLogger
 from os import path
 from ssl import SSLContext, PROTOCOL_TLS_SERVER
 from time import time
-from var import \
+from definition.const import \
+    CREDIT_TYPENAME_DICT,\
+    DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
+    MAX_TOKEN_INPUT_CONTEXT, MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG
+from definition.var import \
     bot, img2img_mgr, user_mgr,\
     getWebsocketInstanceCount
 from websockets_routes import Router
@@ -211,16 +211,25 @@ class WebsocketController:
             reply = 'wait-finish'
             await self.send_as_role(ws, result='fail', role='system', content=reply)
             return
+        user_message = make_message('user', prompt)
+        token_prompt = user_message['__token']
+        self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
+        if token_prompt > MAX_TOKEN_INPUT_CONTEXT:
+            # 超出 token 数限制
+            reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_INPUT_CONTEXT)
+            await self.send_as_role(ws, result='fail', role='system', content=reply)
+            return
+        user_mgr.add_message(openid, user_message)
         user_mgr.set_pending(openid, True)
         whole_message = ''
         try:
-            messages = user_mgr.get_last_conversations(openid, 20)
+            messages = user_mgr.clip_conversations(openid, MAX_TOKEN_INPUT_CONTEXT - token_prompt)
             packet = ''
             for message in bot.invoke_chat(user_mgr.users[openid], prompt, messages, True):
                 # 系统消息，只记录不发送
                 content = message['content']
                 if message['role'] == 'system':
-                    user_mgr.record_conversation(openid, prompt, content)
+                    user_mgr.add_message(openid, message)
                     continue
                 if not content: raise Exception("接口调用失败")
                 packet += content
@@ -232,7 +241,7 @@ class WebsocketController:
                 await self.send_as_role(ws, result='success', role='assistant', content=packet)
                 packet = ''
             # 记录对话内容
-            user_mgr.record_conversation(openid, prompt, whole_message)
+            user_mgr.add_message(openid, make_message('assistant', whole_message))
             user_mgr.reduce_remaining_credit(openid, 'completion')
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
@@ -240,6 +249,7 @@ class WebsocketController:
             await self.check_remaining_credit(ws, openid, 'completion')
         except Exception as e:
             self.logger.error(e)
+            user_mgr.add_message(openid, make_message('assistant', whole_message))
             reply = 'error-raised'
             await self.send_as_role(ws, result='fail', role='system', content=reply)
         user_mgr.set_pending(openid, False)
@@ -261,7 +271,7 @@ class WebsocketController:
             url = bot.invoke_image_creation(user_mgr.users[openid], prompt)
             await self.send_as_role(ws, result='success', role='assistant', type='image', url=url)
             # 记录对话内容
-            user_mgr.record_conversation(openid, prompt, "<image>" + url)
+            user_mgr.add_message(openid, make_message('assistant', '<image>' + url))
             user_mgr.reduce_remaining_credit(openid, 'image')
             # 检查剩余可用次数
             await self.check_remaining_credit(ws, openid, 'image')

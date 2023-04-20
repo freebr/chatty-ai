@@ -1,4 +1,4 @@
-from const import DIR_DATA
+from definition.const import DIR_DATA
 from logging import Logger
 from os import listdir, path
 

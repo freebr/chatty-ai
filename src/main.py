@@ -1,5 +1,6 @@
 if __name__ == '__main__':
-    from const import DIR_CERT_WS, DIR_LOGS
+    from definition.const import DIR_CERT_WS, DIR_LOGS
+    from definition.var import setWebsocketInstanceCount
     from os import environ, getcwd, mkdir, path
     import datetime
     import logging
@@ -19,7 +20,6 @@ if __name__ == '__main__':
         logging.Formatter.converter = lambda sec, what: (datetime.datetime.now() + datetime.timedelta(hours=8)).timetuple()
     from controller.api_controller import APIController
     from controller.websocket_controller import WebsocketController
-    from var import setWebsocketInstanceCount
     import web
 
 if __name__ == '__main__':

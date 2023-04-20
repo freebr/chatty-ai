@@ -1,4 +1,4 @@
-from const import DIR_CONFIG
+from definition.const import DIR_CONFIG
 from os import path
 from random import random
 from logging import Logger

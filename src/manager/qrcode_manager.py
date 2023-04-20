@@ -1,4 +1,4 @@
-from const import DIR_IMAGES_TEMPLATE
+from definition.const import DIR_IMAGES_TEMPLATE
 from PIL import Image
 from logging import Logger
 from os import path

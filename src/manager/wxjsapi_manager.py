@@ -1,6 +1,6 @@
+from definition.var import APP_PARAM
 from helper.formatter import convert_encoding
 from logging import Logger
-from var import APP_PARAM
 import hashlib
 import json
 import random

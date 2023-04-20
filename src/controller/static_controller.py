@@ -1,4 +1,4 @@
-from const import ALLOWED_FILES, DIR_STATIC
+from definition.const import ALLOWED_FILES, DIR_STATIC
 import logging
 import mimetypes
 import os

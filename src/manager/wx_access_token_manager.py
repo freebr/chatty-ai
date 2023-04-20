@@ -1,4 +1,4 @@
-from const import URL_WEIXIN_BASE
+from definition.const import URL_WEIXIN_BASE
 from logging import Logger
 from time import sleep
 from types import FunctionType

@@ -1,7 +1,7 @@
 import _thread
 import os
 import redis
-from const import DIR_CONFIG, DIR_IMAGES_IMG2IMG
+from definition.const import DIR_CONFIG, DIR_IMAGES_IMG2IMG
 from logging import getLogger
 from manager.feature_manager import FeatureManager
 from manager.img2img_manager import Img2ImgManager

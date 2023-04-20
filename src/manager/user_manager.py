@@ -1,4 +1,4 @@
-from const import DIR_USERS, CREDIT_TYPENAME_DICT
+from definition.const import DIR_USERS, CREDIT_TYPENAME_DICT, MAX_TOKEN_INPUT_CONTEXT
 from helper.formatter import now
 from logging import Logger
 from os import path
@@ -164,27 +164,27 @@ class UserManager:
             if not self.reset_daily_data(openid): return False
         return True
 
-    def get_last_conversations(self, openid, count=5):
+    def clip_conversations(self, openid, max_tokens=MAX_TOKEN_INPUT_CONTEXT):
         """
-        以 list 形式返回指定用户之前指定次数的对话
+        返回指定用户之前不超过指定 token 数的对话组成的列表
         """
         if openid not in self.users: return []
-        if count < 1: return []
+        records = self.users[openid]['records']
         ret = []
-        for record in self.users[openid]['records'][-count:]:
-            ret.append({ 'role': 'user', 'content': record['input'] })
-            ret.append({ 'role': 'assistant', 'content': record['output'] })
+        tokens = 0
+        for i in range(-1, -len(records), -1):
+            token = records[i]['__token']
+            if tokens + token > MAX_TOKEN_INPUT_CONTEXT: break
+            ret.append(records[i])
+            tokens += token
         return ret
 
-    def record_conversation(self, openid, input, output):
+    def add_message(self, openid, *messages):
         """
-        记录指定用户的对话
+        为指定用户添加消息记录
         """
         if openid not in self.users: self.register_user(openid)
-        self.users[openid]['records'].append({
-            'input': input,
-            'output': output,
-        })
+        self.users[openid]['records'] += messages
         self.dump_user(openid)
 
     def clear_conversation(self, openid):

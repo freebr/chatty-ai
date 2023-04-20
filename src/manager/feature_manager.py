@@ -1,4 +1,4 @@
-from const import DIR_CONFIG
+from definition.const import DIR_CONFIG
 from logging import Logger
 from os import path
 import yaml
