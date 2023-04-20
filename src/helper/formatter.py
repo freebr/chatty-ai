@@ -36,4 +36,4 @@ def fail_json(**kwargs):
     return json.dumps(ret, ensure_ascii=False)
 
 def now():
-    return (datetime.datetime.now() + datetime.timedelta(hours=8)).ctime()
+    return datetime.datetime.now().ctime()

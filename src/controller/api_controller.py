@@ -187,7 +187,7 @@ class APIController:
         """
         url = web.input().get('url')
         if not url: return fail_json(message='请输入有效的文章 URL')
-        return fail_json() if not article_mgr.add_article_url(url) else success_json()
+        return fail_json() if not article_mgr.add_ad_url(url) else success_json()
 
     def remove_article_url(self):
         """
@@ -195,7 +195,7 @@ class APIController:
         """
         url = web.input().get('url')
         if not url: return fail_json(message='请输入有效的文章 URL')
-        return fail_json() if not article_mgr.remove_article_url(url) else success_json()
+        return fail_json() if not article_mgr.remove_ad_url(url) else success_json()
 
     def update_article_url_list(self):
         """
@@ -353,7 +353,7 @@ class APIController:
                 self.send_message(openid, reply, send_as_text=True)
                 self.logger.info('用户 %s clicked menu "Show User Level".', openid)
             case 'see-ad':
-                article_url = article_mgr.shuffle_get_url()
+                article_url = article_mgr.shuffle_get_ad_url()
                 self.push_article_by_url(openid, article_url)
                 self.logger.info('用户 %s clicked menu "See Ad".', openid)
             case _:
@@ -587,7 +587,7 @@ class APIController:
         reply = self.get_credit_used_up_reply(openid, credit_typename)
         if wait_before_remind: time.sleep(5)
         self.send_message(openid, reply, send_as_text=True)
-        article_url = article_mgr.shuffle_get_url()
+        article_url = article_mgr.shuffle_get_ad_url()
         self.push_article_by_url(openid, article_url)
         return False
 

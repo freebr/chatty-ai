@@ -3,6 +3,7 @@ import os
 import redis
 from const import DIR_CONFIG, DIR_IMAGES_IMG2IMG
 from logging import getLogger
+from manager.feature_manager import FeatureManager
 from manager.img2img_manager import Img2ImgManager
 from manager.key_token_manager import KeyTokenManager
 from manager.user_manager import UserManager

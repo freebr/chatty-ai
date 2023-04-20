@@ -5,7 +5,7 @@ import requests.api as requests
 import web
 
 re_maths = re.compile((
-r'方程|等式|函数|积分|微分|导数|'
+r'方程|等式|积分|微分|导数|'
 r'代数|向量|张量|矩阵|行列式|特征值|'
 r'化简|通分|约分|求导|求和|求解|'
 r'椭圆|圆锥|圆柱|圆台|曲线|抛物线|'

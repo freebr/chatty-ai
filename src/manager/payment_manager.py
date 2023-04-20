@@ -231,7 +231,7 @@ class PaymentManager:
                 self.init_pay_info()
                 return False
             result:dict
-            with open(self.file_path_pay_info, 'r') as f:
+            with open(self.file_path_pay_info, 'r', encoding='utf-8', errors='ignore') as f:
                 result = yaml.load(f, Loader=yaml.FullLoader)
             if not result: raise Exception('支付信息列表加载失败')
             self.pay_info = result

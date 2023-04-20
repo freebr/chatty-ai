@@ -70,8 +70,9 @@ class ExpressService:
         通过语义理解提取快递查询信息
         """
         try:
+            message = '输入:' + message + '。'
             if len(conditions):
-                message += '\n已知信息：' + json.dumps(conditions, ensure_ascii=False)
+                message += '\n已知信息:' + json.dumps(conditions, ensure_ascii=False)
             reply = self.semantic_parse(system_prompt=system_prompt, content=message)
             self.logger.info(reply)
             # 提取 JSON
@@ -117,7 +118,7 @@ class ExpressService:
         # 没有匹配到快递单号，命中测试不通过
         if not found: return False, None
         results = self.extract_info(
-            system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"问题中出现的快递单号，没有则为空","company":"快递公司","phone":"可选，问题中出现的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
+            system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"输入的快递单号，没有则为空","company":"快递公司","phone":"可选，输入的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
             message=message,
         )
         if not results: return False, None

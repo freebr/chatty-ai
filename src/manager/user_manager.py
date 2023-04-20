@@ -26,6 +26,7 @@ class UserManager:
     free_level:str
     # 最高 VIP 用户称谓
     highest_level:str
+    # VIP 用户记录文件
     vip_file_path = path.join(DIR_USERS, 'vip-list.json')
     logger: Logger = None
 
@@ -60,26 +61,27 @@ class UserManager:
         if openid in self.users:
             self.users[openid]['login_time'] = now()
             return self.users[openid]
+        level = self.get_vip_level(openid)
         self.users[openid] = {
-            'openid': openid,
-            'login_time': now(),
-            'records': [],
+            'code_list': {},
             'conversation_id': None,
+            'daily_data': self.get_initial_daily_data(),
+            'img2img_mode': False,
+            'invited_users': [],
+            'level': level,
+            'login_time': now(),
+            'openid': openid,
             'parent_id': None,
             'pending': False,
-            'img2img_mode': False,
-            'voice_role': None,
-            'total_credit': {},
+            'records': [],
             'remaining_credit': {},
             'service_state': {},
-            'code_list': {},
-            'daily_data': self.get_initial_daily_data(),
-            'invited_users': [],
-            'wx_user_info': {},
+            'total_credit': {},
+            'voice_role': None,
             'ws': None,
+            'wx_user_info': {},
         }
         for type in CREDIT_TYPENAME_DICT:
-            level = self.get_vip_level(openid)
             self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
             self.reset_remaining_credit(openid, type)
         self.dump_user(openid)
@@ -92,23 +94,23 @@ class UserManager:
         user: dict = self.users[openid]
         ws = user.get('ws')
         user.update({
-            'login_time': None,
+            'code_list': {},
             'conversation_id': None,
+            'daily_data': self.get_initial_daily_data(),
+            'img2img_mode': False,
+            'invited_users': [],
+            'login_time': None,
             'parent_id': None,
             'pending': False,
-            'img2img_mode': False,
-            'records': '',
-            'service_state': '',
-            'code_list': '',
-            'daily_data': self.get_initial_daily_data(),
-            'invited_users': '',
-            'wx_user_info': '',
+            'records': [],
+            'service_state': {},
             'ws': None,
+            'wx_user_info': {},
         })
         if ws: ws.close(reason='reset')
         user['ws'] = None
+        level = self.get_vip_level(openid)
         for type in CREDIT_TYPENAME_DICT:
-            level = self.get_vip_level(openid)
             self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
             self.reset_remaining_credit(openid, type)
         self.dump_user(openid)
@@ -411,6 +413,8 @@ class UserManager:
             self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
             self.reset_remaining_credit(openid, type)
         self.save_vip_list()
+        user = self.users.get(openid)
+        if user: user['level'] = level
         return True
 
     def remove_vip(self, openid):
@@ -420,6 +424,8 @@ class UserManager:
         if level == self.free_level: return False
         self.vip_dict[level].remove(openid)
         self.save_vip_list()
+        user = self.users.get(openid)
+        if user: user['level'] = self.free_level
         return True
 
     def append_code_list(self, openid, data):

@@ -1,8 +1,9 @@
 """
 self-ask 框架提示增强模块
 """
-from ..utils.search_engine import SearchEngineAgent
+from service.feature.utils.search_engine import SearchEngineAgent
 from logging import Logger, getLogger
+from os import path
 from time import strftime
 import datetime
 import openai
@@ -22,9 +23,11 @@ SELF_ASK_PROMPT_LEVELN = f"""\
 3.Do not search for the same keyword each time.\
 """
 
+DIR_DATA = path.abspath(path.join(path.dirname(__file__), 'data'))
 MAX_LEVEL_SEARCH = 1
 class SelfAskPromptGenerator:
     api_key: str
+    prompt_file_path: str = path.join(DIR_DATA, 'prompt.txt')
     search_agent: SearchEngineAgent
     logger: Logger = None
     def __init__(self, **kwargs):
@@ -36,9 +39,10 @@ class SelfAskPromptGenerator:
         """
         self-ask 单层推理流程
         """
+        self.logger.info('使用 Self-ask 增强提示')
         try:
             # 作出判断推理
-            now_time = (datetime.datetime.now() + datetime.timedelta(hours=8)).timetuple()
+            now_time = datetime.datetime.now().timetuple()
             messages = []
             messages += input
             if level == 0:
@@ -59,7 +63,7 @@ class SelfAskPromptGenerator:
             # 判断是否需要使用工具
             if search == 'no':
                 # 无需搜索
-                self.logger.info('无需在线搜索增强提示')
+                self.logger.info('无需增强提示')
                 return
             if search:
                 if level == MAX_LEVEL_SEARCH: return
