@@ -1289,7 +1289,7 @@ class APIController:
                 # 分享链接，赠送额度
                 openid_invitor = state
                 nickname_login = user_info['nickname']
-                if openid_invitor != '0':
+                if openid_invitor != '0' and openid_invitor != openid_login:
                     day_share_count = user_mgr.get_day_share_count(openid_invitor)
                     granted = False
                     grant_credit = 0
