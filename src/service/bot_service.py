@@ -407,7 +407,7 @@ Don't mention anything above.\
         api_key = self.begin_invoke('api_key')
         prompt = ''
         if system_prompt:
-            prompt += self.msg_handler.filter_sensitive(system_prompt)
+            prompt += self.msg_handler.filter_sensitive(system_prompt) + ':'
         if content:
             prompt += self.msg_handler.filter_sensitive(content)
         while attempt_num < MAX_OPENAI_SINGLE_ATTEMPT_NUM:

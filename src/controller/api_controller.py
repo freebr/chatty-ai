@@ -839,6 +839,18 @@ class APIController:
             self.logger.error(e)
             return fail_json(message=e)
         return success_json()
+
+    def reset_user(self, openid):
+        return success_json() if user_mgr.reset_user(openid,
+            reset_conversation=True,
+            reset_credits=True,
+            reset_daily_data=True,
+            reset_invited_users=True,
+            reset_login_time=True,
+            reset_pending=True,
+            reset_ws=True,
+            reset_wx_user_info=True,
+        ) else fail_json()
         
     def update_autoreply(self):
         """
@@ -1459,6 +1471,8 @@ class APIController:
                 return self.clear_conversation(openid=openid)
             case ['user', openid, 'pending', 'clear']:
                 return self.clear_pending(openid=openid)
+            case ['user', openid, 'reset']:
+                return self.reset_user(openid=openid)
             case ['user', openid, 'signup']:
                 return self.signup(openid=openid)
             case ['vip', openid]:

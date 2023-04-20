@@ -87,34 +87,56 @@ class UserManager:
         self.dump_user(openid)
         return self.users[openid]
 
-    def reset_user(self, openid):
+    def reset_user(self, openid, **kwargs):
         """
         重置指定用户的全部信息
         """
-        user: dict = self.users[openid]
-        ws = user.get('ws')
-        user.update({
-            'code_list': {},
-            'conversation_id': None,
-            'daily_data': self.get_initial_daily_data(),
-            'img2img_mode': False,
-            'invited_users': [],
-            'login_time': None,
-            'parent_id': None,
-            'pending': False,
-            'records': [],
-            'service_state': {},
-            'ws': None,
-            'wx_user_info': {},
-        })
-        if ws: ws.close(reason='reset')
-        user['ws'] = None
-        level = self.get_vip_level(openid)
-        for type in CREDIT_TYPENAME_DICT:
-            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-            self.reset_remaining_credit(openid, type)
-        self.dump_user(openid)
-        return True
+        try:
+            user: dict = self.users[openid]
+            updates = {}
+            if kwargs.get('reset_conversation', False):
+                # 重置对话信息
+                updates.update({
+                    'code_list': {},
+                    'conversation_id': None,
+                    'img2img_mode': False,
+                    'parent_id': None,
+                    'records': [],
+                    'service_state': {},
+                })
+            if kwargs.get('reset_credits', False):
+                # 重置额度信息
+                level = self.get_vip_level(openid)
+                for type in CREDIT_TYPENAME_DICT:
+                    self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+                    self.reset_remaining_credit(openid, type)
+            if kwargs.get('reset_daily_data', False):
+                # 重置每日数据
+                updates['daily_data'] = self.get_initial_daily_data()
+            if kwargs.get('reset_invited_users', False):
+                # 重置每日数据
+                updates['invited_users'] = []
+            if kwargs.get('reset_login_time', False):
+                # 重置登录时间
+                updates['login_time'] = None
+            if kwargs.get('reset_pending', False):
+                # 重置等待状态
+                updates['pending'] = False
+            if kwargs.get('reset_ws', False):
+                # 重置 Websocket 连接（关闭连接）
+                ws = user.get('ws')
+                if ws: ws.close(reason='reset')
+                updates['ws'] = None
+            if kwargs.get('reset_wx_user_info', False):
+                # 重置微信用户信息
+                updates['wx_user_info'] = {}
+            user.update(updates)
+            self.dump_user(openid)
+            self.logger.info('重置用户 %s 信息成功，开关信息：%s', openid, json.dumps(kwargs))
+            return True
+        except Exception as e:
+            self.logger.error('重置用户 %s 信息失败：%s，开关信息：%s', openid, str(e), json.dumps(kwargs))
+            return False
 
     def get_initial_daily_data(self):
         """
@@ -171,12 +193,12 @@ class UserManager:
         """
         if len(self.users) == 0: return True
         if openid == '*':
-            for openid in self.users: self.reset_user(openid)
+            for openid in self.users: self.reset_user(openid, reset_conversation=True)
             self.logger.info('全部用户对话已清空')
         else:
             user = self.users.get(openid)
             if not user: return True
-            self.reset_user(openid)
+            self.reset_user(openid, reset_conversation=True)
             self.logger.info('用户 %s 的对话已清空', openid)
         return True
 
