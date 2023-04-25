@@ -1,10 +1,12 @@
-from definition.const import DIR_IMAGES_TEMPLATE
-from PIL import Image
-from logging import Logger
+from logging import getLogger, Logger
 from os import path
-import qrcode
+from PIL import Image
 
-class QRCodeManager:
+import qrcode
+from definition.cls import Singleton
+from definition.const import DIR_IMAGES_TEMPLATE
+
+class QRCodeManager(metaclass=Singleton):
     logo_file_path: str = path.join(DIR_IMAGES_TEMPLATE, 'qrcode-logo.jpg')
     logger: Logger = None
     def __init__(self, **kwargs):

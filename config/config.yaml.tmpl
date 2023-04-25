@@ -1,0 +1,92 @@
+AccessTokens:
+  Services:
+    OpenAI:
+    - <OpenAI Access Token>
+    - <OpenAI API 密钥>
+  WeChat: <Wechat Access Token>
+
+APIKeys:
+  App:
+    APPID: <微信公众号 APPID>
+    APPSECRET: <微信公众号 APPSECRET>
+    APPTOKEN: <微信公众号 APPTOKEN>
+  AzureTTS:
+    Key: <Azure 语音服务的密钥>
+    Region: <Azure 语音服务的位置/区域>
+  Services:
+    OpenAI:
+      - <OpenAI API 密钥>
+    WeatherService: <天气服务 API 密钥>
+    IpService: <IP 地址查询服务 API 密钥>
+    ExchangeService: <汇率查询服务 API 密钥>
+    MovieService: <电影查询服务 API 密钥>
+    JokeService: <笑话查询服务 API 密钥>
+  Img2Img: <FlagStudio 服务 API 密钥>
+  Clash: <Clash API 密钥>
+
+Articles:
+  media_id:
+    upgrade: <此处输入升级额度链接 URL>
+    usage: <此处输入玩法功能介绍 URL>
+  url:
+    ad:
+      - <广告推文 URL 1>
+      - <广告推文 URL 2>
+      - <广告推文 URL 3>
+
+Autoreplies:
+  Subscribe: |
+    <此处输入公众号被关注时的自动回复，支持多行>
+
+Chatgroups:
+  QRCodes:
+    - <群聊二维码图片 URL 1>
+    - <群聊二维码图片 URL 2>
+    - <群聊二维码图片 URL 3>
+
+Databases:
+  Redis:
+    Host: <Redis 服务器主机名或地址>
+    Port: <Redis 服务器端口号>
+    Password: <Redis 服务器登录密码 base64 值>
+  <其他数据库配置>:
+    Host: <其他数据库服务器主机名或地址>
+    Port: <其他数据库服务器端口号>
+    Password: <其他数据库登录密码 base64 值>
+
+Features:
+  Commands:
+      google:
+        <等级名称>: <每日可用额度>
+      browse_website:
+        <等级名称>: <每日可用额度>
+      get_text_summary:
+        <等级名称>: <每日可用额度>
+      generate_image:
+        <等级名称>: <每日可用额度>
+      exchange_rate:
+        <等级名称>: <每日可用额度>
+      delivery:
+        <等级名称>: <每日可用额度>
+      ip:
+        <等级名称>: <每日可用额度>
+      joke:
+        <等级名称>: <每日可用额度>
+      movie:
+        <等级名称>: <每日可用额度>
+      phone:
+        <等级名称>: <每日可用额度>
+      weather:
+        <等级名称>: <每日可用额度>
+      maths:
+        <等级名称>: <每日可用额度>
+  Memory:
+    - <等级名称1>
+    - <等级名称2>
+    - <等级名称3>
+
+WxPay:
+  APIV3_KEY: <API v3 密钥，详见 https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay3_2.shtml>
+  APPID: <APPID，应用ID或服务商模式下的 sp_appid>
+  CERT_SERIAL_NO: <商户证书序列号>
+  MCHID: <微信支付商户号（直连模式）或服务商商户号（服务商模式，即 sp_mchid）>

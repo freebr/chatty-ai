@@ -1,68 +1,56 @@
-from logging import Logger
 import json
-import re
 import requests.api as requests
+from logging import getLogger, Logger
 
-class PhoneService:
+from configure import Config
+from definition.cls import Singleton
+
+cfg = Config()
+class PhoneService(metaclass=Singleton):
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger("PHONESERVICE")
 
-    def __real_query(self, phone_list:list):
+    def __real_query(self, phone_numbers: list):
         """
         查询手机归属地和运营商信息
-        phone_list: 手机号码列表
+        phone_numbers: 手机号码列表
         """
         try:
             results = []
-            for phone in phone_list:
+            for phone_number in phone_numbers:
                 # 获取信息
-                url = f'http://cx.shouji.360.cn/phonearea.php?number={phone}'
-                res = requests.get(url).json()
+                headers = {
+                    'User-Agent': cfg.data.features['UserAgent'],
+                }
+                url = f'http://cx.shouji.360.cn/phonearea.php?number={phone_number}'
+                res = requests.get(url, headers=headers).json()
                 phone_data = res['data']
                 sp = phone_data['sp']
                 if not sp:
                     data = {
-                        'phone': phone,
+                        'phone': phone_number,
                         'location': 'oversea',
                     }
                 else:
                     province = phone_data['province']
                     city = phone_data['city']
                     data = {
-                        'ip': phone,
+                        'phone': phone_number,
                         'location': province + city,
                         'provider': sp,
                     }
-                results.append(json.dumps(data, ensure_ascii=False))
-            return results
+                results.append(f'电话{phone_number}的信息:' + json.dumps(data, ensure_ascii=False))
+            return ''.join(results)
         except Exception as e:
-            self.logger.error('查询手机归属地和运营商信息失败：%s', e)
-            return []
+            self.logger.error('查询手机归属地和运营商信息失败：%s', str(e))
+            return ''
 
-    def test(self, message:str):
+    def invoke(self, args):
         """
-        从 message 中尝试提取手机归属地和运营商查询信息
-        如提取成功，返回 True 以及查询所需的信息，否则返回 False
+        调用服务并返回信息
         """
-        mobile_list = []
-        try:
-            for match in re.finditer(r'(?:[^\d]|^)(1[3-9]\d{9})(?:[^\d]|$)', message):
-                mobile_list.append(match[1])
-            if len(mobile_list) == 0: return False, []
-        except Exception as e:
-            self.logger.error('命中测试出错：%s', e)
-            return False, []
-        return True, mobile_list
-
-    def invoke(self, data, **kwargs):
-        """
-        调用服务并返回信息，否则返回 None
-        """
-        mobile_list = data
-        result = self.__real_query(phone_list=mobile_list)
-        if len(result):
-            result = 'System enquired phone info:' + ''.join(result)
-        else:
-            result = '没有查询到相关手机号码信息'
+        phone_numbers = args.get('phone_number')
+        if type(phone_numbers) == str: phone_numbers = [phone_numbers]
+        result = self.__real_query(phone_numbers=phone_numbers)
         return result

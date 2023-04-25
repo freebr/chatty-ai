@@ -1,15 +1,17 @@
-from definition.const import DIR_IMAGES_TEMPLATE, DIR_IMAGES_POSTER
-from PIL import Image, ImageDraw, ImageFont
-from logging import Logger
-from manager.qrcode_manager import QRCodeManager
-import time
 import os
+import time
+from logging import getLogger, Logger
+from PIL import Image, ImageDraw, ImageFont
 
-class PosterManager:
+from definition.cls import Singleton
+from definition.const import DIR_IMAGES_TEMPLATE, DIR_IMAGES_POSTER
+from manager.qrcode_manager import QRCodeManager
+
+class PosterManager(metaclass=Singleton):
     logger: Logger = None
     qrcode_mgr: QRCodeManager
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('POSTERMGR')
         self.qrcode_mgr = QRCodeManager(logger=self.logger)
 
     def make_poster(self, openid, nickname, headimg_path):

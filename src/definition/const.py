@@ -8,6 +8,8 @@ environ['URL_SITE_BASE'] = 'https://freebr.cn/chatty-ai'
 
 ALLOWED_FILES = ['.htm', '.html', '.css', '.js', '.jpg', '.png', '.gif', '.txt', '.webp', '.wav', '.mp3', '.mp4', '.ico', '.ttf', '.map']
 DEBUG_MODE = environ['DEBUG'] == '1'
+# 记忆过期时间 2h
+EXPIRE_TIME_MEMORY = 7200
 # TTS 引擎（azure-tts/xf-tts）
 TTS_ENGINE = 'azure-tts'
 DIR_CERT_WS = 'cert/ws'
@@ -42,16 +44,26 @@ RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后�
 MAX_DAY_SHARE_COUNT = 5
 # 图生图一次最大上传图片数
 MAX_UPLOAD_IMAGES = 1
-# 文本生成上下文加输入的最大token数
-MAX_TOKEN_INPUT_CONTEXT = 2096
+# 文本生成上下文提示（含输入）的最大token数
+MAX_TOKEN_CONTEXT = 3796
+MAX_TOKEN_CONTEXT_WITHOUT_HISTORY = int(MAX_TOKEN_CONTEXT * .8)
 # 文本生成单个输出最大token数
-MAX_TOKEN_OUTPUT = 2000
+MAX_TOKEN_OUTPUT = 4096
+# 对话使用的模型名称
+MODEL_CHAT = 'gpt-3.5-turbo-0301'
+# 内容审查使用的模型名称
+MODEL_MODERATION = 'text-moderation-latest'
 # 文本生成使用的模型名称
-MODEL_TEXT_COMPLETION = 'gpt-3.5-turbo-0301'
+MODEL_TEXT_COMPLETION = 'text-davinci-003'
+# 生成嵌入向量使用的模型名称
+MODEL_EMBEDDING = 'text-embedding-ada-002'
 # 分享赠送额度系数
 SHARE_GRANT_CREDIT_SCALE = 0.9
 # 签到赠送额度系数
 SIGNUP_GRANT_CREDIT_SCALE = 0.5
+
+COUNT_RECENT_MESSAGES_TO_TAKE_IN = 9
+COUNT_RELEVANT_MEMORY_TO_TAKE_IN = 10
 
 CREDIT_TYPENAME_DICT = {
     'completion': '对话',

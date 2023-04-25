@@ -1,16 +1,22 @@
-from definition.const import URL_WEIXIN_BASE
-from logging import Logger
-from time import sleep
-from types import FunctionType
 import _thread
 import inspect
 import json
 import requests.api as requests
+from logging import getLogger, Logger
+from time import sleep
+from types import FunctionType
+
+from .key_token_manager import KeyTokenManager
+from definition.cls import Singleton
+from definition.const import URL_WEIXIN_BASE
+
+key_token_mgr = KeyTokenManager()
 
 # 刷新 access token 时的有效期截止时间 5 分钟
 MAX_LEFT_TIME_UPDATE_TOKEN = 300
+APP_PARAM = key_token_mgr.get_app_param()
 
-class WxAccessTokenManager:
+class WxAccessTokenManager(metaclass=Singleton):
     __access_token = ''
     __update_left_time = 0
     APPID = ''
@@ -19,9 +25,9 @@ class WxAccessTokenManager:
     cb_success: FunctionType
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.APPID = kwargs['APPID']
-        self.APPSECRET = kwargs['APPSECRET']
+        self.logger = getLogger('WXACCESSTOKENMGR')
+        self.APPID = APP_PARAM['APPID']
+        self.APPSECRET = APP_PARAM['APPSECRET']
 
     def update_access_token(self):
         try:

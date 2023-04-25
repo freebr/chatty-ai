@@ -1,6 +1,8 @@
 from .qrcode_manager import QRCodeManager
-from definition.const import DIR_CERT_WXPAY, DIR_CONFIG, DIR_IMAGES_TEMPLATE, DIR_USERS
-from logging import Logger
+from configure import Config
+from definition.cls import Singleton
+from definition.const import DIR_CERT_WXPAY, DIR_IMAGES_TEMPLATE, DIR_USERS
+from logging import getLogger, Logger
 from os import environ, mkdir, path
 from PIL import Image
 from wechatpayv3 import WeChatPay, WeChatPayType
@@ -10,6 +12,8 @@ import time
 import uuid
 import web
 import yaml
+
+cfg = Config()
 
 # 商户证书私钥
 with open(path.abspath(path.join(DIR_CERT_WXPAY, 'key/apiclient_key.pem'))) as f:
@@ -28,7 +32,7 @@ PARTNER_MODE = False
 # 代理设置，None或者{'https': 'http://10.10.1.10:1080'}，详细格式参见https://docs.python-requests.org/zh_CN/latest/user/advanced.html
 PROXY = None
 
-class PaymentManager:
+class PaymentManager(metaclass=Singleton):
     # API v3 密钥，详见 https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay3_2.shtml
     APIV3_KEY: str
     # APPID，应用ID或服务商模式下的 sp_appid
@@ -37,24 +41,24 @@ class PaymentManager:
     CERT_SERIAL_NO: str
     # 微信支付商户号（直连模式）或服务商商户号（服务商模式，即 sp_mchid）
     MCHID: str
-    qrcode_mgr = None
-    pay_qrcode_template_file_path: str = path.join(DIR_IMAGES_TEMPLATE, 'pay-qrcode-template.jpg')
-    pay_info: dict
-    file_path_config: str
-    file_path_pay_info: str
     levels: dict
-    wxpay = None
+    pay_info_file_path: str
+    pay_info: dict
+    pay_qrcode_template_file_path: str
     payment_success_callback = None
+    qrcode_mgr = None
     workdir: str
+    wxpay = None
+    wxpay_config: dict
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.file_path_config = path.abspath(path.join(DIR_CONFIG, 'wx-pay.yml'))
-        self.file_path_pay_info = path.abspath(path.join(DIR_USERS, 'pay-info.yml'))
+        self.logger = getLogger('PAYMENTMGR')
+        self.pay_qrcode_template_file_path = path.join(DIR_IMAGES_TEMPLATE, 'pay-qrcode-template.jpg')
+        self.pay_info_file_path = path.abspath(path.join(DIR_USERS, 'pay-info.yaml'))
         self.levels = kwargs['levels']
         self.workdir = kwargs['workdir']
-        self.read_config()
-        self.read_pay_info()
+        self.load_config()
+        self.load_pay_info()
         self.qrcode_mgr = QRCodeManager(logger=self.logger)
         self.wxpay = WeChatPay(
             wechatpay_type=WeChatPayType.JSAPI,
@@ -141,7 +145,7 @@ class PaymentManager:
             self.logger.info('订单已生成：%s', out_trade_no)
             # 生成支付二维码
             im_qrcode = self.qrcode_mgr.generate_qrcode(data=code_url, usage='打赏')
-            im_pay = Image.open(self.pay_qrcode_template_file_path)
+            im_pay: Image.Image = Image.open(self.pay_qrcode_template_file_path)
             im_pay.paste(im_qrcode, (223, 335), mask=None)
             if to_file:
                 img_name = out_trade_no + '.jpg'
@@ -201,37 +205,31 @@ class PaymentManager:
         """
         self.payment_success_callback = func
         
-    def read_config(self):
+    def load_config(self):
         try:
-            if not path.isfile(self.file_path_config):
-                self.logger.error('微信支付配置加载失败，找不到文件：%s', self.file_path_config)
-                return False
-            result:dict
-            with open(self.file_path_config, 'r') as f:
-                result = yaml.load(f, Loader=yaml.FullLoader)
-            if not result: raise Exception('微信支付配置加载失败')
-            self.APIV3_KEY = str(result['APIV3_KEY'])
-            self.APPID = str(result['APPID'])
-            self.CERT_SERIAL_NO = str(result['CERT_SERIAL_NO'])
-            self.MCHID = str(result['MCHID'])
+            self.wxpay_config = cfg.data.wxpay
+            self.APIV3_KEY = str(self.wxpay_config['APIV3_KEY'])
+            self.APPID = str(self.wxpay_config['APPID'])
+            self.CERT_SERIAL_NO = str(self.wxpay_config['CERT_SERIAL_NO'])
+            self.MCHID = str(self.wxpay_config['MCHID'])
             self.logger.info('微信支付配置加载成功')
             return True
         except Exception as e:
             self.logger.error('微信支付配置加载失败：%s', str(e))
             return False
             
-    def read_pay_info(self):
+    def load_pay_info(self):
         """
         读取支付信息列表
         """
         try:
             self.pay_info = {}
-            if not self.file_path_pay_info: raise Exception('找不到支付信息列表文件')
-            if not path.isfile(self.file_path_pay_info):
+            if not self.pay_info_file_path: raise Exception('找不到支付信息列表文件')
+            if not path.isfile(self.pay_info_file_path):
                 self.init_pay_info()
                 return False
-            result:dict
-            with open(self.file_path_pay_info, 'r', encoding='utf-8', errors='ignore') as f:
+            result: dict
+            with open(self.pay_info_file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 result = yaml.load(f, Loader=yaml.FullLoader)
             if not result: raise Exception('支付信息列表加载失败')
             self.pay_info = result
@@ -246,7 +244,7 @@ class PaymentManager:
         保存支付信息列表
         """
         try:
-            with open(self.file_path_pay_info, mode='w', encoding='utf-8', errors='ignore') as f:
+            with open(self.pay_info_file_path, mode='w', encoding='utf-8', errors='ignore') as f:
                 yaml.dump(self.pay_info, f, allow_unicode=True)
             self.logger.info('支付信息列表加载成功')
             return True

@@ -1,8 +1,9 @@
 """
 self-ask 框架提示增强模块
 """
+from manager.feature_manager import FeatureManager
 from service.feature.utils.search_engine import SearchEngineAgent
-from logging import Logger, getLogger
+from logging import getLogger, Logger, getLogger
 from os import path
 from time import strftime
 import datetime
@@ -27,19 +28,34 @@ DIR_DATA = path.abspath(path.join(path.dirname(__file__), 'data'))
 MAX_LEVEL_SEARCH = 1
 class SelfAskPromptGenerator:
     api_key: str
+    feature_mgr: FeatureManager
     prompt_file_path: str = path.join(DIR_DATA, 'prompt.txt')
+    guidance_prompt: str
     search_agent: SearchEngineAgent
     logger: Logger = None
     def __init__(self, **kwargs):
         self.logger = kwargs['logger']
-        self.api_key = kwargs['api_key']
+        self.feature_mgr = FeatureManager(logger=self.logger)
         self.search_agent = SearchEngineAgent(logger=getLogger('SEARCHENGINEAGENT'))
+        self.load_guidance_prompt()
 
-    def invoke(self, input:list, level=0):
+    def load_guidance_prompt(self):
+        """
+        加载引导提示
+        """
+        try:
+            with open(self.prompt_file_path, mode='r', encoding='utf-8', errors='ignore') as f:
+                self.guidance_prompt = f.read()
+            self.logger.info('Self-ask 引导提示加载成功')
+        except Exception as e:
+            self.logger.info('Self-ask 引导提示加载失败：%s', str(e))
+
+    def invoke(self, input: list, api_key: str, level=0):
         """
         self-ask 单层推理流程
         """
         self.logger.info('使用 Self-ask 增强提示')
+        self.api_key = api_key
         try:
             # 作出判断推理
             now_time = datetime.datetime.now().timetuple()

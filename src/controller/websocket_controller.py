@@ -1,23 +1,24 @@
-from asyncio import get_event_loop, new_event_loop, set_event_loop
-from helper.formatter import fail_json, make_message, success_json
-from logging import Logger, getLogger
-from os import path
-from ssl import SSLContext, PROTOCOL_TLS_SERVER
-from time import time
-from definition.const import \
-    CREDIT_TYPENAME_DICT,\
-    DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
-    MAX_TOKEN_INPUT_CONTEXT, MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG
-from definition.var import \
-    bot, img2img_mgr, user_mgr,\
-    getWebsocketInstanceCount
-from websockets_routes import Router
 import _thread
 import json
 import re
 import socket
 import web
 import websockets
+from asyncio import get_event_loop, new_event_loop, set_event_loop
+from logging import getLogger, Logger, getLogger
+from os import path
+from ssl import SSLContext, PROTOCOL_TLS_SERVER
+from time import time
+from websockets_routes import Router
+
+from definition.const import \
+    CREDIT_TYPENAME_DICT,\
+    DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
+    MAX_TOKEN_CONTEXT, MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG
+from definition.var import getWebsocketInstanceCount
+from helper.formatter import fail_json, make_message, success_json
+from manager import img2img_mgr, user_mgr
+from service.base import bot
 
 TIME_WAIT = 5
 MIN_PACKET_LENGTH = 1
@@ -68,7 +69,7 @@ class WebsocketController:
         async def route_handler(ws, req_path):
             async for message in ws:
                 try:
-                    data:dict = json.loads(message)
+                    data: dict = json.loads(message)
                     opr = data.get('opr')
                     openid = data.get('openid')
                     if not openid:
@@ -214,16 +215,16 @@ class WebsocketController:
         user_message = make_message('user', prompt)
         token_prompt = user_message['__token']
         self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
-        if token_prompt > MAX_TOKEN_INPUT_CONTEXT:
+        if token_prompt > MAX_TOKEN_CONTEXT:
             # 超出 token 数限制
-            reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_INPUT_CONTEXT)
+            reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
             await self.send_as_role(ws, result='fail', role='system', content=reply)
             return
         user_mgr.add_message(openid, user_message)
         user_mgr.set_pending(openid, True)
         whole_message = ''
         try:
-            messages = user_mgr.clip_conversations(openid, MAX_TOKEN_INPUT_CONTEXT - token_prompt)
+            messages = user_mgr.clip_conversations(openid, MAX_TOKEN_CONTEXT - token_prompt)
             packet = ''
             for message in bot.invoke_chat(user_mgr.users[openid], prompt, messages, True):
                 # 系统消息，只记录不发送
@@ -242,7 +243,7 @@ class WebsocketController:
                 packet = ''
             # 记录对话内容
             user_mgr.add_message(openid, make_message('assistant', whole_message))
-            user_mgr.reduce_remaining_credit(openid, 'completion')
+            user_mgr.reduce_service_credit(openid, 'completion')
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
             # 检查剩余可用次数
@@ -272,7 +273,7 @@ class WebsocketController:
             await self.send_as_role(ws, result='success', role='assistant', type='image', url=url)
             # 记录对话内容
             user_mgr.add_message(openid, make_message('assistant', '<image>' + url))
-            user_mgr.reduce_remaining_credit(openid, 'image')
+            user_mgr.reduce_service_credit(openid, 'image')
             # 检查剩余可用次数
             await self.check_remaining_credit(ws, openid, 'image')
         except Exception as e:
@@ -319,7 +320,7 @@ class WebsocketController:
                 img_url = path.join(URL_IMG2IMG_EXPORT, dest_name)
                 self.logger.info('图像 url：%s', img_url)
                 await self.send_as_role(ws, result='success', role='assistant', type='image', url=img_url)
-                user_mgr.reduce_remaining_credit(openid, 'image')
+                user_mgr.reduce_service_credit(openid, 'image')
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
@@ -332,13 +333,13 @@ class WebsocketController:
     
     async def check_remaining_credit(self, ws, openid, credit_typename, wait_before_remind=True):
         # 判断是否有剩余可用次数，如果用完则发出提示
-        if user_mgr.get_remaining_credit(openid, credit_typename) > 0: return True
+        if user_mgr.get_remaining_service_credit(openid, credit_typename) > 0: return True
         reply = self.get_credit_used_up_reply(openid, credit_typename)
         await self.send(ws, success_json(message={"role": "system", "content": reply}))
         return False
 
     def get_credit_used_up_reply(self, openid, type='completion'):
-            total_credit = user_mgr.get_total_credit(openid, type)
+            total_credit = user_mgr.get_total_service_credit(openid, type)
             grant_credit = int(total_credit / 2)
             return f"""\
 ❗【系统提示】您的 {total_credit} 次{CREDIT_TYPENAME_DICT[type]}使用额度已用完~

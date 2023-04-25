@@ -1,13 +1,18 @@
-from base64 import b64decode
-from logging import Logger
-from os import path, mkdir
-from time import time
 import json
 import requests.api as requests
 import web
+from base64 import b64decode
+from logging import getLogger, Logger
+from os import path, mkdir
+from time import time
+
+from definition.cls import Singleton
+from definition.const import DIR_IMAGES_IMG2IMG
+from manager.key_token_manager import KeyTokenManager
 
 URL_API_BASE = 'https://flagopen.baai.ac.cn/flagStudio'
-class Img2ImgManager:
+key_token_mgr = KeyTokenManager()
+class Img2ImgManager(metaclass=Singleton):
     api_keys: list
     workdir: str
     users: dict
@@ -22,11 +27,11 @@ class Img2ImgManager:
         'height': 768,
     }
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.workdir = kwargs['workdir']
-        self.api_keys = kwargs['api_keys']
-        self.users = {}
+        self.logger = getLogger('IMG2IMGMGR')
+        self.api_keys = key_token_mgr.api_keys.get('Img2Img')
         self.style_dict = { key: {'used_count': 0} for key in STYLE_LIST }
+        self.users = {}
+        self.workdir = DIR_IMAGES_IMG2IMG
     
     def register_user(self, name):
         """
@@ -208,12 +213,12 @@ class Img2ImgManager:
         ]
         return ret
 
-    def find_style(self, message:str):
+    def find_style(self, message: str):
         for key in STYLE_LIST:
             if key in message: return key
         return
 
-    def is_style_supported(self, style:str):
+    def is_style_supported(self, style: str):
         """
         返回是否支持生成指定风格
         """

@@ -1,62 +1,46 @@
-from logging import Logger
-from os import path
-import yaml
+from configure import Config
+from definition.cls import Singleton
+from logging import getLogger, Logger
 
-KEYTOKEN_NAME = {
-    'api_keys': 'API Key 列表',
-    'access_tokens': 'Access Token 列表',
-}
-class KeyTokenManager:
-    workdir: str
-    file_path: dict
-    configs: dict
+cfg = Config()
+class KeyTokenManager(metaclass=Singleton):
+    access_tokens: dict
+    api_keys: dict
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.workdir = kwargs['workdir']
-        self.file_path = {
-            'api_keys': path.abspath(path.join(self.workdir, 'api-keys.yml')),
-            'access_tokens': path.abspath(path.join(self.workdir, 'access-tokens.yml')),
-        }
-        self.configs = {}
-        self.read('api_keys')
-        self.read('access_tokens')
+        self.logger = getLogger('KEYTOKENMGR')
+        self.load()
         
-    def read(self, list_type):
+    def load(self):
         try:
-            list_name = KEYTOKEN_NAME.get(list_type, list_type)
-            file_path = self.file_path.get(list_type)
-            self.configs[list_type] = {}
-            configs = self.configs[list_type]
-            if not file_path: raise Exception('找不到类型 %s(%s) 的密钥配置文件' % (list_type, list_name))
-            if not path.isfile(file_path):
-                self.logger.error('%s 加载失败，找不到文件：%s', list_name, file_path)
-                return False
-            result:dict
-            with open(file_path, 'r') as f:
-                result = yaml.load(f, Loader=yaml.FullLoader)
-            if not result: raise Exception('%s 加载失败' % list_name)
-            for service_name, service_keys in result.items():
-                if list_type == 'api_keys' and isinstance(service_keys, str): service_keys = [service_keys]
-                configs[service_name] = service_keys
-            if configs == {}:
-                self.logger.warn('没有可用的 %s' % list_name)
+            self.access_tokens = cfg.data.access_tokens or {}
+            self.api_keys = cfg.data.api_keys or {}
+            for service_name, service_keys in self.api_keys.items():
+                if isinstance(service_keys, str): service_keys = [service_keys]
+                self.api_keys[service_name] = service_keys
+            cfg.data.access_tokens = self.access_tokens
+            cfg.data.api_keys = self.api_keys
+            if self.access_tokens == {}:
+                self.logger.warn('没有可用的 Access Token')
             else:
-                self.logger.info('%s 加载成功，数量：%d', list_name, len(configs))
+                self.logger.info('Access Token 加载成功，数量：%d', len(self.access_tokens))
+            if self.api_keys == {}:
+                self.logger.warn('没有可用的 API Key')
+            else:
+                self.logger.info('API Key 加载成功，数量：%d', len(self.api_keys))
             return True
         except Exception as e:
-            self.logger.error('%s 加载失败：%s', list_name, str(e))
+            self.logger.error('Access Token/API Key 加载失败：%s', str(e))
             return False
 
-    def save(self, list_type):
-        try:
-            list_name = KEYTOKEN_NAME.get(list_type, list_type)
-            file_path = self.file_path.get(list_type)
-            configs = self.configs[list_type]
-            with open(file_path, mode='w', encoding='utf-8', errors='ignore') as f:
-                yaml.dump(configs, f)
-            self.logger.info('%s 保存成功，数量：%d', list_name, len(configs))
-            return True
-        except Exception as e:
-            self.logger.error('%s 保存失败：', list_name, str(e))
-            return False
+    def save(self):
+        return cfg.save()
+
+    def get_app_param(self):
+        """
+        返回微信公众号 APP_PARAM 信息
+        """
+        return {
+            name: self.api_keys.get('App').get(name)
+            for name in ['APPID', 'APPSECRET', 'APPTOKEN', 'ENCODING_AES_KEY']
+        }

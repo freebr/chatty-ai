@@ -1,11 +1,16 @@
 from azure.cognitiveservices.speech import SpeechConfig, SpeechSynthesizer, ResultReason, CancellationReason
 from azure.cognitiveservices.speech.audio import AudioOutputConfig
-from handler.wave_handler import WaveHandler
 from logging import getLogger, Logger
 from os import mkdir, path, spawnv, P_WAIT
 from time import time
 
-class VoicesManager:
+from configure import Config
+from definition.cls import Singleton
+from definition.const import DIR_TTS, TTS_ENGINE
+from handler.wave_handler import WaveHandler
+
+cfg = Config()
+class VoicesManager(metaclass=Singleton):
     engine = ''
     workdir: str
     tts_executor: dict
@@ -16,14 +21,14 @@ class VoicesManager:
     speech_config: SpeechConfig
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.engine = kwargs['engine']
-        self.workdir = path.abspath(kwargs['workdir'])
-        self.tts_executor = kwargs['tts_executor']
-        self.SPEECH_KEY = kwargs['SPEECH_KEY']
-        self.SPEECH_REGION = kwargs['SPEECH_REGION']
+        self.logger = getLogger('VOICESMGR')
+        self.engine = TTS_ENGINE
+        self.SPEECH_KEY = cfg.data.api_keys.get('AzureTTS').get('Key')
+        self.SPEECH_REGION = cfg.data.api_keys.get('AzureTTS').get('Region')
         self.speech_config = SpeechConfig(subscription=self.SPEECH_KEY, region=self.SPEECH_REGION)
-        self.wave_handler = WaveHandler(logger=getLogger('WAVEMGR'))
+        self.tts_executor = {'xf-tts': 'tts/xf-tts/bin/xf-tts'}
+        self.wave_handler = WaveHandler()
+        self.workdir = path.abspath(path.join(DIR_TTS, TTS_ENGINE, 'export'))
 
     def run_tts(self, text, **kwargs):
         """

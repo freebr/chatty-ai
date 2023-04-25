@@ -1,5 +1,5 @@
 from definition.const import DIR_DATA
-from logging import Logger
+from logging import getLogger, Logger
 from os import listdir, path
 
 class MessageHandler:

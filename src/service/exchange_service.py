@@ -1,14 +1,15 @@
-from logging import Logger
+from definition.cls import Singleton
+from logging import getLogger, Logger
 import json
 import re
 import requests.api as requests
 
-class ExchangeService:
+class ExchangeService(metaclass=Singleton):
     api_key = {}
     semantic_parse: any
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger("EXCHANGESERVICE")
         self.api_key = kwargs['api_key']
         self.semantic_parse = kwargs['semantic_parse']
 
@@ -31,61 +32,38 @@ class ExchangeService:
                 self.logger.warn('汇率信息查询结果为空')
                 return ''
             camount = data['camount']
-            result = f'{amount}{from_currency["currency"]}={camount}{to_currency["currency"]}({data["updatetime"]})'
+            result = f'{amount}{from_currency["currency"]}={camount}{to_currency["currency"]}(updated at {data["updatetime"]})'
             self.logger.info(result)
             return result
         except Exception as e:
-            self.logger.error('查询汇率信息失败：%s', e)
+            self.logger.error('查询汇率信息失败：%s', str(e))
             return ''
-
-    def test(self, message:str):
+            
+    def invoke(self, args):
         """
-        从 message 中尝试提取汇率查询信息
-        如提取成功，返回 True 以及查询所需的信息，否则返回 False
+        调用服务并返回信息
         """
-        for entry in currency_dict:
-            match = re.search(f"\\b{entry['currency']}\\b", message, re.I)
-            match = re.search(entry['name'], message, re.I) if not match else match
-            if not match: continue
-            return True, (message,)
-        return False, None
-
-    def invoke(self, data, **kwargs):
-        """
-        调用服务并返回信息，否则返回 None
-        """
-        # 获取模型的语义理解结果
-        message = data[0]
-        if not re.search(r'\d', message): message += '(num=1)'
-        system_prompt = '不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"from":"转换前","to":"转换后","num":"金额（默认为1）"}...] 数组元素等于问题个数 不要加任何注释'
-        reply = self.semantic_parse(system_prompt=system_prompt, content=message)
-        self.logger.info(reply)
-        # 提取 JSON
-        match = re.search(r'\[(.*)\]', reply, re.S)
-        # 未提取到 JSON 结构，视为非汇率转换问题
-        if not match: return
-        json_array = match[0]
-        questions = json.loads(json_array)
         results = []
         def find_currency(keyword):
             for entry in currency_dict:
                 if re.match(entry['currency'], keyword, re.I) or re.match(entry['name'], keyword, re.I): return entry
             return
-        for question in questions:
-            from_currency = find_currency(question['from'])
-            to_currency = find_currency(question['to'])
-            # 未匹配到货币，视为非汇率转换问题
-            if not from_currency or not to_currency: continue
-            amount = 0.
-            try:
-                amount = float(question['num'])
-            except ValueError:
-                amount = float(re.match(r'\d+', message))
-                # 未匹配到数值，视为非汇率转换问题
-                if not amount: continue
-                amount = amount[0]
-            results.append(self.__real_query(from_currency, to_currency, amount))
-        return 'System enquired exchange rate info:' + ';'.join(results)
+        from_currency = args['from']
+        if type(from_currency) == str: from_currency = [from_currency]
+        to_currency = args['to']
+        if type(to_currency) == str: to_currency = [to_currency]
+        amount = args['amount']
+        if type(amount) == str: amount = [amount]
+        try:
+            index = 0
+            for from_cur in from_currency:
+                for to_cur in to_currency:
+                    result = self.__real_query(find_currency(from_cur), find_currency(to_cur), float(amount[min(len(amount) - 1, index)]))
+                    index += 1
+                    results.append(result)
+        except ValueError:
+            return
+        return ','.join(results)
 
 currency_dict = [
     {'currency': 'AED','name': '阿联酋迪拉姆'},
@@ -114,7 +92,7 @@ currency_dict = [
     {'currency': 'BYN','name': '白俄罗斯卢布（新）'},
     {'currency': 'BYR','name': '白俄罗斯卢布'},
     {'currency': 'BZD','name': '伯利兹美元'},
-    {'currency': 'CAD','name': '加拿大元|加元'},
+    {'currency': 'CAD','name': '加拿大元|加元|加币'},
     {'currency': 'CDF','name': '刚果法郎'},
     {'currency': 'CHF','name': '瑞士法郎'},
     {'currency': 'CLP','name': '智利比索'},

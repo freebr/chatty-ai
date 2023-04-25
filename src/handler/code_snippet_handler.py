@@ -1,4 +1,4 @@
-from logging import Logger
+from logging import getLogger, Logger
 from lzstring import LZString
 import json
 import re
@@ -7,7 +7,7 @@ class CodeSnippetHandler:
     lz: LZString
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('CODEMGR')
         self.lz = LZString()
 
     def process_snippet(self, code):

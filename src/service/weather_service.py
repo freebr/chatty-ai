@@ -1,36 +1,39 @@
-from bs4 import BeautifulSoup
-from cpca import transform_text_with_addrs
-from logging import Logger
-from numpy import Infinity
-from pandas import DataFrame
 import json
 import re
 import requests.api as requests
 import web
+from bs4 import BeautifulSoup
+from cpca import transform_text_with_addrs
+from datetime import datetime
+from logging import getLogger, Logger
+from numpy import Infinity
+from pandas import DataFrame
+
+from definition.cls import Singleton
 
 re_weather = re.compile((
 r'天气|气候|气温|温度|室温|外温|湿度|降水|'
 r'雨|雪|雷|雾|霜|云|风|冰|冷|热|凉'))
-class WeatherServiceBing:
+class WeatherServiceBing(metaclass=Singleton):
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger("WEATHERSERVICEBING")
 
-    def __real_query(self, regions:list):
+    def __real_query(self, places: list):
         """
         查询天气信息（必应）
-        regions: 地区名称列表
+        places: 地区名称列表
         """
         try:
             results = []
-            for region in regions:
+            for place in places:
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.39',
                 }
-                url = f'https://cn.bing.com/?q={web.urlquote(region + "天气")}'
+                url = f'https://cn.bing.com/?q={web.urlquote(place + "天气")}'
                 res = requests.get(url, headers=headers).text
                 soup = BeautifulSoup(res, 'lxml')
-                if not soup.find(class_='wtr_core'): return []
+                if not soup.find(class_='wtr_core'): return ''
                 # 获取实况天气信息
                 now_weather_name = soup.find(class_='wtr_currIcon').attrs['aria-label']
                 now_temperature = soup.find(class_='wtr_currTemp').attrs['data-val']
@@ -40,64 +43,67 @@ class WeatherServiceBing:
                 now_wind = soup.find(class_='wtr_currWind').next
                 now_humidity = soup.find(class_='wtr_currHumi').next
                 now = f"当前天气：{now_weather_name} 气温：{now_temperature}摄氏度 最高{now_temperature_high}摄氏度 最低{now_temperature_low}摄氏度 {now_perci} {now_wind} {now_humidity}"
+                dt = datetime.now()
                 # 获取预报天气信息
                 forecast = []
                 for el in soup.find_all(class_='wtr_forecastDay'):
-                    forecast.append(el.attrs['aria-label'])
+                    forecast_desc = el.attrs['aria-label']
+                    # 获取完整日期
+                    matches = re.search(r'\d+', forecast_desc)
+                    day = int(matches[0])
+                    forecast_dt = datetime(dt.year, dt.month, day, dt.hour, dt.minute, dt.second, dt.microsecond)
+                    if (dt - forecast_dt).days > 9:
+                        new_month = dt.month + 1
+                        new_year = dt.year
+                        if new_month > 12:
+                            new_month = 1
+                            new_year += 1
+                        forecast_dt = datetime(new_year, new_month, day, dt.hour, dt.minute, dt.second, dt.microsecond)
+                    elif (forecast_dt - dt).days > 9:
+                        new_month = dt.month - 1
+                        new_year = dt.year
+                        if new_month < 1:
+                            new_month = 12
+                            new_year -= 1
+                        forecast_dt = datetime(new_year, new_month, day, dt.hour, dt.minute, dt.second, dt.microsecond)
+                    day_desc = forecast_dt.strftime('%m月%d日')
+                    match (forecast_dt - dt).days:
+                        case -3: day_desc += '(大前天的天气)'
+                        case -2: day_desc += '(前天的天气)'
+                        case -1: day_desc += '(昨天的天气)'
+                        case 0: day_desc += '(今天的天气)'
+                        case 1: day_desc += '(明天的天气)'
+                        case 2: day_desc += '(后天的天气)'
+                        case 3: day_desc += '(大后天的天气)'
+                    forecast_desc = day_desc + forecast_desc
+                    forecast.append(forecast_desc)
                 data = {
                     'now': now,
                     'forecast': forecast,
                 }
-                self.logger.info(data)
-                results.append(json.dumps(data, ensure_ascii=False))
-            return results
+                results.append(f'{place}天气:\n' + json.dumps(data, ensure_ascii=False))
+            return ''.join(results)
         except Exception as e:
-            self.logger.error('查询天气信息失败：%s', e)
-            return []
+            self.logger.error('查询天气信息失败：%s', str(e))
+            return ''
 
-    def test(self, message:str):
+    def invoke(self, args):
         """
-        从 message 中尝试提取天气查询信息
-        如提取成功，返回 True 以及查询所需的信息，否则返回 False
+        调用服务并返回信息
         """
-        if not re.search(re_weather, message): return False, (None,)
-        regions = []
-        try:
-            results:DataFrame = transform_text_with_addrs(text_with_addrs=message, pos_sensitive=True)
-            results = results.get(['省', '市', '区', '省_pos', '市_pos', '区_pos'])
-            for index, row in results.iterrows():
-                for type in ['区', '市', '省']:
-                    pos_start = row[type + '_pos']
-                    if pos_start != -1:
-                        region = row[type]
-                        break
-                if pos_start == -1: continue
-                regions.append(region)
-            if len(regions) == 0: return False, (None,)
-        except Exception as e:
-            return False, (None,)
-        return True, (regions,)
-
-    def invoke(self, data, **kwargs):
-        """
-        调用服务并返回信息，否则返回 None
-        """
-        regions, = data
-        result = self.__real_query(regions=regions)
-        if len(result):
-            result = 'System enquired weather info:' + ''.join(result)
-        else:
-            result = '没有查询到相关天气信息'
+        places = args.get('place')
+        if type(places) == str: places = [places]
+        result = self.__real_query(places=places)
         return result
 
 class WeatherServiceAmap:
     api_key = {}
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger("WEATHERSERVICEAMAP")
         self.api_key = kwargs['api_key']
 
-    def __real_query(self, ad_code_list:list, which_date_list:list):
+    def __real_query(self, ad_code_list: list, which_date_list: list):
         """
         查询天气信息（高德）
         ad_code_list: 城市的行政编码
@@ -129,7 +135,7 @@ class WeatherServiceAmap:
             self.logger.error('查询天气信息失败：%s', e)
             return []
 
-    def test(self, message:str):
+    def test(self, message: str):
         """
         从 message 中尝试提取天气查询信息
         如提取成功，返回 True 以及查询所需的信息，否则返回 False
@@ -189,7 +195,7 @@ class WeatherServiceAmap:
 
     def invoke(self, data, **kwargs):
         """
-        调用服务并返回信息，否则返回 None
+        调用服务并返回信息
         """
         ad_code_list, which_date_list = data
         result = self.__real_query(ad_code_list=ad_code_list, which_date_list=which_date_list)

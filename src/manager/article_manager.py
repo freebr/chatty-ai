@@ -1,67 +1,88 @@
-from definition.const import DIR_CONFIG
-from os import path
+from configure import Config
+from definition.cls import Singleton
+from logging import getLogger, Logger
 from random import random
-from logging import Logger
-import yaml
 
-class ArticleManager:
-    file_path: str = path.join(DIR_CONFIG, 'article-urls.yml')
-    article_urls: list = []
-    ad_urls: list = []
+cfg = Config()
+class ArticleManager(metaclass=Singleton):
+    article_media_ids: dict
+    article_urls: dict
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.read()
+        self.logger = getLogger('ARTICLEMGR')
+        self.load()
         
-    def read(self):
+    def load(self):
         """
-        加载文章 URL 列表
+        加载推文信息字典
         """
         try:
-            if not path.isfile(self.file_path):
-                self.logger.error('文章 URL 列表加载失败，找不到文件：%s', self.file_path)
-                return False
-            result:dict
-            with open(self.file_path, 'r') as f:
-                result = yaml.load(f, Loader=yaml.FullLoader)
-            if not result: raise Exception('文章 URL 列表加载失败')
-            self.article_urls = result
-            self.ad_urls = self.article_urls.get('ads')
-            if not self.ad_urls: self.article_urls['ads'] = self.ad_urls = []
-            self.logger.info('文章 URL 列表加载成功，广告文章数量：%d', len(self.ad_urls))
+            self.article_urls = cfg.data.articles.get('url', {})
+            self.article_media_ids = cfg.data.articles.get('media_id', {})
+            cfg.data.articles = {
+                'url': self.article_urls,
+                'media_id': self.article_media_ids,
+            }
+            self.logger.info('推文信息加载成功，URL 数量：%d，media id 数量：%d', len(self.article_urls), len(self.article_media_ids))
             return True
         except Exception as e:
-            self.logger.error('文章 URL 列表加载失败：%s', str(e))
+            self.logger.error('推文信息加载失败：%s', str(e))
             return False
 
-    def save(self):
+    def add_media_id(self, type: str, media_id: str):
         """
-        保存文章 URL 列表
+        添加指定类型的推文 media id
         """
-        with open(self.file_path, mode='w', encoding='utf-8', errors='ignore') as f:
-            yaml.dump(self.article_urls, f)
-
-    def add_ad_url(self, url=''):
-        """
-        添加广告文章 URL
-        """
-        if url in self.ad_urls: return True
-        self.ad_urls.append(url)
-        self.save()
+        media_ids = self.article_media_ids.get(type, [])
+        if media_id in media_ids: return True
+        media_ids.append(media_id)
+        self.article_media_ids[type] = media_ids
+        cfg.save()
         return True
 
-    def remove_ad_url(self, url=''):
+    def remove_media_id(self, type: str, media_id: str):
         """
-        删除广告文章 URL
+        删除指定类型的推文 media id
         """
-        if url not in self.ad_urls: return False
-        self.ad_urls.remove(url)
-        self.save()
+        media_ids = self.article_media_ids.get(type, [])
+        if media_id in media_ids: return True
+        media_ids.remove(media_id)
+        self.article_media_ids[type] = media_ids
+        cfg.save()
         return True
 
-    def shuffle_get_ad_url(self):
+    def get_media_id(self, type: str):
         """
-        随机抽取一篇广告文章 URL 并返回
+        返回指定类型的推文 media id
         """
-        index = int(random() * len(self.ad_urls))
-        return self.ad_urls[index]
+        return self.article_media_ids.get(type)
+
+    def add_url(self, type: str, url: str):
+        """
+        添加指定类型的推文 URL
+        """
+        urls = self.article_urls.get(type, [])
+        if url in urls: return False
+        urls.append(url)
+        self.article_urls[type] = urls
+        cfg.save()
+        return True
+
+    def remove_url(self, type: str, url: str):
+        """
+        删除指定类型的推文 URL
+        """
+        urls = self.article_urls.get(type, [])
+        if not url in urls: return False
+        urls.remove(url)
+        self.article_urls[type] = urls
+        cfg.save()
+        return True
+
+    def shuffle_get_url(self, type: str):
+        """
+        随机抽取一篇指定类型的推文 URL 并返回
+        """
+        urls = self.article_urls.get(type, [])
+        index = int(random() * len(urls))
+        return urls[index]

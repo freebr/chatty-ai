@@ -1,28 +1,3 @@
-from asyncio import new_event_loop, set_event_loop, get_event_loop
-from crypt.WXBizMsgCrypt import WXBizMsgCrypt
-from definition.const import \
-    BASE_ARTICLE_FILES, DEBUG_MODE,\
-    MAX_DAY_SHARE_COUNT, MAX_TOKEN_INPUT_CONTEXT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT,\
-    DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_DALLE, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
-    SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
-    RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
-    MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
-    URL_CLASH_SERVER, URL_PUSH_ARTICLE_COVER_IMAGE, URL_PUSH_LINK_COVER_IMAGE, URL_SITE_BASE, URL_WEIXIN_BASE
-from definition.var import \
-    bot,\
-    key_token_mgr, img2img_mgr, user_mgr,\
-    APP_PARAM
-from handler.code_snippet_handler import CodeSnippetHandler
-from helper.formatter import convert_encoding, fail_json, get_query_string, make_message, success_json
-from helper.wx_menu import get_voice_menu, get_wx_menu
-from manager.article_manager import ArticleManager
-from manager.autoreply_manager import AutoReplyManager
-from manager.group_chat_manager import GroupChatManager
-from manager.payment_manager import PaymentManager
-from manager.poster_manager import PosterManager
-from manager.voices_manager import VoicesManager
-from manager.wxjsapi_manager import WxJsApiManager
-from numpy import Infinity
 import _thread
 import hashlib
 import json
@@ -34,43 +9,30 @@ import shutil
 import time
 import web
 import xmltodict
+from asyncio import new_event_loop, set_event_loop, get_event_loop
+from crypt.WXBizMsgCrypt import WXBizMsgCrypt
 
-payment_mgr = PaymentManager(
-    logger=logging.getLogger('PAYMENTMGR'),
-    workdir=DIR_IMAGES_QRCODE,
-    levels=user_mgr.vip_levels,
-)
-poster_mgr = PosterManager(
-    logger=logging.getLogger('POSTERMGR'),
-)
-autoreply_mgr = AutoReplyManager(
-    logger=logging.getLogger('AUTOREPLYMGR'),
-)
-article_mgr = ArticleManager(
-    logger=logging.getLogger('ARTICLEMGR'),
-)
-group_chat_mgr = GroupChatManager(
-    logger=logging.getLogger('GROUPCHATMGR'),
-)
-voices_mgr = VoicesManager(
-    logger=logging.getLogger('GROUPCHATMGR'),
-    engine=TTS_ENGINE,
-    workdir=os.path.join(DIR_TTS, TTS_ENGINE, 'export'),
-    tts_executor={'xf-tts': 'tts/xf-tts/bin/xf-tts'},
-    SPEECH_KEY=key_token_mgr.configs.get('api_keys').get('AzureTTS').get('Key'),
-    SPEECH_REGION=key_token_mgr.configs.get('api_keys').get('AzureTTS').get('Region'),
-)
-code_handler = CodeSnippetHandler(
-    logger=logging.getLogger('CODEMGR'),
-)
-wxjsapi_mgr = WxJsApiManager(
-    logger=logging.getLogger('WXJSAPIMGR'),
-)
-voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
+from definition.const import \
+    BASE_ARTICLE_FILES, DEBUG_MODE,\
+    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT,\
+    DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_DALLE, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
+    SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
+    RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
+    MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
+    URL_CLASH_SERVER, URL_PUSH_ARTICLE_COVER_IMAGE, URL_PUSH_LINK_COVER_IMAGE, URL_SITE_BASE, URL_WEIXIN_BASE
+from handler import code_handler
+from helper.formatter import convert_encoding, fail_json, get_query_string, make_message, success_json
+from helper.wx_menu import get_voice_menu, get_wx_menu
+from manager import article_mgr, autoreply_mgr, chatgroup_mgr, key_token_mgr, img2img_mgr, payment_mgr, poster_mgr, user_mgr, voices_mgr, wxjsapi_mgr
+from numpy import Infinity
+from service.base import bot
+
+APP_PARAM = key_token_mgr.get_app_param()
 # 赞赏金额
 DONATE_PRICE = 4.9
 # 发出耐心等待提示的等待时间 10s
 WAIT_TIMEOUT = 10
+voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
 
 class APIController:
     logger = None
@@ -131,9 +93,9 @@ class APIController:
         except Exception as e:
             return fail_json(error=e.__str__())
 
-    def list_articles(self, offset=0, to_dict=True):
+    def list_wx_articles(self, offset=0, to_dict=True):
         """
-        列出文章
+        从微信服务器获取推文数组信息并返回
         """
         data = {
             'offset': offset,
@@ -182,27 +144,51 @@ class APIController:
             ensure_ascii=False,
         )
 
+    def add_article_media_id(self):
+        """
+        添加推文 media id
+        """
+        type = web.input().get('type')
+        if not type: return fail_json(message='请输入推文类型')
+        media_id = web.input().get('media_id')
+        if not media_id: return fail_json(message='请输入有效的推文 media id')
+        return fail_json() if not article_mgr.add_media_id(type, media_id) else success_json()
+
+    def remove_article_media_id(self):
+        """
+        删除推文 media id
+        """
+        type = web.input().get('type')
+        if not type: return fail_json(message='请输入推文类型')
+        media_id = web.input().get('media_id')
+        if not media_id: return fail_json(message='请输入有效的推文 media id')
+        return fail_json() if not article_mgr.remove_media_id(type, media_id) else success_json()
+
     def add_article_url(self):
         """
-        添加文章 URL
+        添加推文 URL
         """
+        type = web.input().get('type')
+        if not type: return fail_json(message='请输入推文类型')
         url = web.input().get('url')
-        if not url: return fail_json(message='请输入有效的文章 URL')
-        return fail_json() if not article_mgr.add_ad_url(url) else success_json()
+        if not url: return fail_json(message='请输入有效的推文 URL')
+        return fail_json() if not article_mgr.add_url(type, url) else success_json()
 
     def remove_article_url(self):
         """
-        删除文章 URL
+        删除推文 URL
         """
+        type = web.input().get('type')
+        if not type: return fail_json(message='请输入推文类型')
         url = web.input().get('url')
-        if not url: return fail_json(message='请输入有效的文章 URL')
-        return fail_json() if not article_mgr.remove_ad_url(url) else success_json()
+        if not url: return fail_json(message='请输入有效的推文 URL')
+        return fail_json() if not article_mgr.remove_url(type, url) else success_json()
 
-    def update_article_url_list(self):
+    def update_articles(self):
         """
-        更新文章 URL 列表
+        更新推文信息字典
         """
-        return fail_json() if not article_mgr.read() else success_json()
+        return fail_json() if not article_mgr.load() else success_json()
 
     def process_message(self, data):
         """
@@ -281,16 +267,16 @@ class APIController:
                 if msg_data_id:
                     self.logger.info('用户 %s 消息 msg_data_id：%s', openid, msg_data_id)
                     type = None
-                    remaining_credit = user_mgr.get_remaining_credit(openid, 'completion')
+                    remaining_credit = user_mgr.get_remaining_service_credit(openid, 'completion')
                     if remaining_credit <= 0:
                         type = 'completion'
-                        user_mgr.reset_remaining_credit(openid, 'completion')
-                    remaining_credit = user_mgr.get_remaining_credit(openid, 'image')
+                        user_mgr.reset_remaining_service_credit(openid, 'completion')
+                    remaining_credit = user_mgr.get_remaining_service_credit(openid, 'image')
                     if remaining_credit <= 0:
                         type = 'image'
-                        user_mgr.reset_remaining_credit(openid, 'image')
+                        user_mgr.reset_remaining_service_credit(openid, 'image')
                     if type:
-                        new_credit = user_mgr.get_remaining_credit(openid, type)
+                        new_credit = user_mgr.get_remaining_service_credit(openid, type)
                         self.logger.info('%s 获得%s体验额度 %s 次', openid, type, new_credit)
                         reply = f'✅【系统提示】您已获得 {new_credit} 次{CREDIT_TYPENAME_DICT[type]}体验额度，快继续体验吧~/爱心'
                         self.send_message(openid, reply, send_as_text=True)
@@ -320,7 +306,7 @@ class APIController:
                 reply = autoreply_mgr.get('welcome')
                 self.send_message(openid, reply, send_as_text=True)
                 file_path = BASE_ARTICLE_FILES['usage']
-                # 推送文章（玩法）
+                # 推文（玩法）
                 with open(file_path, 'r') as f: article_id = f.read().replace('\n', '')
                 self.push_article_by_id(openid, article_id)
                 reply = '您好，请问有什么需要我为您解答的问题吗？'
@@ -329,14 +315,14 @@ class APIController:
             case 'unsubscribe':
                 user_mgr.clear_conversation(openid)
                 return
-        key = event_key
+        key: str = event_key
         match key:
             case 'show-pay-qrcode':
-                self.process_donate_request(openid)
                 self.logger.info('用户 %s 点击菜单“打赏我们”', openid)
+                self.process_donate_request(openid)
             case 'show-group-chat-qrcode':
-                self.send_image(openid, group_chat_mgr.shuffle_get_qrcode())
                 self.logger.info('用户 %s 点击菜单“讨论交流”', openid)
+                self.send_image(openid, chatgroup_mgr.shuffle_get_qrcode())
             case 'show-level':
                 level = user_mgr.get_vip_level(openid)
                 reply = f'【系统提示】您目前的体验等级为【{level}】'
@@ -344,19 +330,19 @@ class APIController:
                     reply += f'，{user_mgr.vip_rights[level]}/鼓掌'
                 else:
                     for credit_type, credit_typename in CREDIT_TYPENAME_DICT.items():
-                        total_credit = user_mgr.get_total_credit(openid=openid, type=credit_type)
-                        remaining_credit = user_mgr.get_remaining_credit(openid=openid, type=credit_type)
+                        total_credit = user_mgr.get_total_service_credit(openid=openid, type=credit_type)
+                        remaining_credit = user_mgr.get_remaining_service_credit(openid=openid, type=credit_type)
                         reply += f'\n{credit_typename}赠送体验额度{total_credit}次，剩余体验额度{remaining_credit}次'
                 if level == user_mgr.free_level:
                     reply += '\n如果觉得我们的服务不错，就请作者喝杯咖啡吧！/咖啡'
                 else:
                     reply += '\n感谢您对我们服务的支持！/爱心'
                 self.send_message(openid, reply, send_as_text=True)
-                self.logger.info('用户 %s clicked menu "Show User Level".', openid)
+                self.logger.info('用户 %s 点击菜单“我的等级”', openid)
             case 'see-ad':
-                article_url = article_mgr.shuffle_get_ad_url()
+                article_url = article_mgr.shuffle_get_url()
                 self.push_article_by_url(openid, article_url)
-                self.logger.info('用户 %s clicked menu "See Ad".', openid)
+                self.logger.info('用户 %s 点击菜单“看点”', openid)
             case _:
                 if not key.startswith('voice:'): return
                 self.process_voice_mode_request(openid, key)
@@ -368,20 +354,20 @@ class APIController:
         # 判断是否有剩余可用次数
         if not self.check_remaining_credit(openid, 'completion'): return
         # 判断是否在等待回答
+        reply = ''
         if user_mgr.get_pending(openid):
             reply = '【系统提示】请先等我回答完~'
         else:
             user_message = make_message('user', prompt)
             token_prompt = user_message['__token']
             self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
-            if token_prompt > MAX_TOKEN_INPUT_CONTEXT:
-                # 超出 token 数限制
-                reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_INPUT_CONTEXT)
-                self.send_message(openid, reply, send_as_text=True)
-                return
-            user_mgr.add_message(openid, user_message)
+            # if token_prompt > MAX_TOKEN_CONTEXT:
+            #     # 超出 token 数限制
+            #     reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
+            #     self.send_message(openid, reply, send_as_text=True)
+            #     return
             user_mgr.set_pending(openid, True)
-            whole_message = ''
+            assistant_reply = ''
             try:
                 # 生成回答
                 reply_result = {'is_respond': False}
@@ -393,18 +379,20 @@ class APIController:
                 if voice_name and voices_info[voice_name][-2] == 'en':
                     # 若选择的语音角色说英语，则给出用英语回答的提示
                     prompt += '\nPlease answer in English.'
-                messages = user_mgr.clip_conversations(openid, MAX_TOKEN_INPUT_CONTEXT - token_prompt)
-                for message in bot.invoke_chat(user_mgr.users[openid], prompt, messages):
+                for message in bot.invoke_chat(user_mgr.users[openid], prompt):
                     reply = message['content']
-                    if not reply: raise Exception('接口调用失败')
-                    # 系统消息，只记录不发送
                     if message['role'] == 'system':
+                        if type(reply) == tuple and reply[0] == 'exceed-token-limit':
+                            # 超出 token 数限制
+                            raise Exception(RESPONSE_EXCEED_TOKEN_LIMIT % (reply[1], reply[2]))
+                        # 系统消息，只记录不发送
                         user_mgr.add_message(openid, message)
                         continue
+                    if not reply: raise ConnectionError()
                     reply_result['is_respond'] = True
                     self.set_typing(openid, True)
                     reply = reply.strip('\n')
-                    whole_message += reply
+                    assistant_reply += reply
                     # 保证发出下一消息前有足够时间间隔，避免微信拒绝响应
                     if last_sent_time != 0 and time.time() - last_sent_time < 2: time.sleep(1)
                     last_sent_time = time.time()
@@ -442,15 +430,15 @@ class APIController:
                         if not reply.startswith('```'): continue
                         if not self.process_snippet(openid, reply): continue
                 # 记录对话内容
-                user_mgr.add_message(openid, make_message('assistant', whole_message))
-                user_mgr.reduce_remaining_credit(openid, 'completion')
+                user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
+                user_mgr.reduce_service_credit(openid, 'completion')
                 self.set_typing(openid, False)
                 reply = None
             except Exception as e:
                 self.logger.error(e)
-                reply = RESPONSE_ERROR_RAISED
+                if type(e) == ConnectionError: reply = RESPONSE_ERROR_RAISED
                 reply_result['is_respond'] = True
-                user_mgr.add_message(openid, make_message('assistant', whole_message))
+                if assistant_reply: user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
             user_mgr.set_pending(openid, False)
             self.set_typing(openid, False)
         if reply:
@@ -492,7 +480,7 @@ class APIController:
             prompt = prompt.replace('图片', '')
             result = bot.invoke_image_creation(user_mgr.users[openid], prompt)
             if type(result) == dict:
-                if not result['content']: raise Exception('接口调用失败')
+                if not result['content']: raise ConnectionError()
                 self.send_message(openid, result['content'], True)
             else:
                 img_url = result
@@ -505,11 +493,11 @@ class APIController:
                 self.send_image(openid, media_id)
                 # 记录对话内容
                 user_mgr.add_message(openid, make_message('assistant', '<image>' + img_url))
-                user_mgr.reduce_remaining_credit(openid, 'image')
+                user_mgr.reduce_service_credit(openid, 'image')
                 self.check_remaining_credit(openid, 'image')
         except Exception as e:
             self.logger.error(e)
-            reply = RESPONSE_ERROR_RAISED
+            if type(e) == ConnectionError: reply = RESPONSE_ERROR_RAISED
             self.send_message(openid, reply, send_as_text=True)
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
@@ -561,7 +549,7 @@ class APIController:
                 if media_id:
                     self.logger.info('图像 media_id：%s', media_id)
                     self.send_image(openid, media_id)
-                    user_mgr.reduce_remaining_credit(openid, 'image')
+                    user_mgr.reduce_service_credit(openid, 'image')
         except Exception as e:
             self.logger.error(e)
             reply = RESPONSE_ERROR_RAISED
@@ -595,16 +583,16 @@ class APIController:
 
     def check_remaining_credit(self, openid, credit_typename, wait_before_remind=True):
         # 判断是否有剩余可用次数，如果用完则发出提示
-        if user_mgr.get_remaining_credit(openid, credit_typename) > 0: return True
+        if user_mgr.get_remaining_service_credit(openid, credit_typename) > 0: return True
         reply = self.get_credit_used_up_reply(openid, credit_typename)
         if wait_before_remind: time.sleep(5)
         self.send_message(openid, reply, send_as_text=True)
-        article_url = article_mgr.shuffle_get_ad_url()
+        article_url = article_mgr.shuffle_get_url()
         self.push_article_by_url(openid, article_url)
         return False
 
     def get_credit_used_up_reply(self, openid, type='completion'):
-        total_credit = user_mgr.get_total_credit(openid, type)
+        total_credit = user_mgr.get_total_service_credit(openid, type)
         return f"""\
 ❗【系统提示】您的 {total_credit} 次{CREDIT_TYPENAME_DICT[type]}体验额度已用完~
 ℹ️觉得AI有帮助，<a href=\'weixin://bizmsgmenu?msgmenucontent=【打赏作者】&msgmenuid=0\'>就点这里扫码</a>，请作者喝杯咖啡吧~
@@ -650,13 +638,13 @@ class APIController:
             self.send_message(openid, message, send_as_text=True)
         return True
     
-    def set_remaining_credit(self, openid, credit_type):
+    def set_remaining_service_credit(self, openid, credit_type):
         """
         设置指定用户、指定类型的可用次数
         """
         if len(openid) == 0: openid = '*'
         credit_value = get_query_string()
-        return fail_json() if not user_mgr.set_remaining_credit(openid, credit_type, credit_value) else success_json()
+        return fail_json() if not user_mgr.set_remaining_service_credit(openid, credit_type, credit_value) else success_json()
 
     def dump_user_info(self):
         """
@@ -688,9 +676,9 @@ class APIController:
         total_credit = {}
         remaining_credit = {}
         for credit_type in CREDIT_TYPENAME_DICT:
-            total_credit[credit_type] = user_mgr.get_total_credit(openid, credit_type)
+            total_credit[credit_type] = user_mgr.get_total_service_credit(openid, credit_type)
             if total_credit[credit_type] == Infinity: total_credit[credit_type] = 'infinity'
-            remaining_credit[credit_type] = user_mgr.get_remaining_credit(openid, credit_type)
+            remaining_credit[credit_type] = user_mgr.get_remaining_service_credit(openid, credit_type)
             if remaining_credit[credit_type] == Infinity: remaining_credit[credit_type] = 'infinity'
         return success_json(
             openid=openid,
@@ -732,7 +720,7 @@ class APIController:
             return fail_json(message='您今日已签到')
         user_mgr.set_signup(openid, True)
         for credit_type in CREDIT_TYPENAME_DICT:
-            total_credit = user_mgr.get_total_credit(openid, credit_type)
+            total_credit = user_mgr.get_total_service_credit(openid, credit_type)
             grant_credit = int(total_credit * SIGNUP_GRANT_CREDIT_SCALE)
             user_mgr.grant_credit(openid, credit_type, grant_credit)
         self.logger.info('用户 %s 签到成功', openid)
@@ -743,7 +731,7 @@ class APIController:
         获取 Clash 正在使用的配置文件
         """
         try:
-            secret = key_token_mgr.configs.get('api_keys').get('Clash')[0]
+            secret = key_token_mgr.api_keys.get('Clash')[0]
             res = requests.get(
                     self.clash_api_url('configs'),
                     headers={
@@ -869,7 +857,7 @@ class APIController:
         更新自动回复消息内容
         """
         try:
-            autoreply_mgr.read()
+            autoreply_mgr.load()
         except Exception as e:
             self.logger.error(e)
             return fail_json(message=e)
@@ -908,7 +896,7 @@ class APIController:
         """
         设置 OpenAI access token
         """
-        if not bot.update_access_tokens(d=key_token_mgr.configs.get('access_tokens').get('Services')):
+        if not bot.update_access_tokens(d=key_token_mgr.access_tokens.get('Services')):
             self.logger.error('更新 OpenAI access token 列表失败')
             return fail_json()
         self.logger.info('更新 OpenAI access token 列表成功')
@@ -920,9 +908,9 @@ class APIController:
         """
         try:
             access_token = web.input().get('access-token')
-            dict_tokens = key_token_mgr.configs.get('access_tokens')
+            dict_tokens = key_token_mgr.access_tokens
             dict_tokens['WeChat'] = access_token
-            key_token_mgr.save('access_tokens')
+            key_token_mgr.save()
             self.logger.info('更新微信 access token 成功，value=%s', access_token)
             return success_json()
         except Exception as e:
@@ -934,7 +922,7 @@ class APIController:
         """
         更新 OpenAI API key 列表
         """
-        if not bot.update_api_keys(d=key_token_mgr.configs.get('api_keys').get('Services')):
+        if not bot.update_api_keys(d=key_token_mgr.api_keys.get('Services')):
             self.logger.error('更新 OpenAI API key 列表失败')
             return fail_json()
         self.logger.info('更新 OpenAI API key 列表成功')
@@ -1238,7 +1226,7 @@ class APIController:
         根据指定的 name 返回对应的微信 API 接口 URL
         """
         if querystring: querystring = '&' + querystring
-        access_token = key_token_mgr.configs.get('access_tokens').get('WeChat')
+        access_token = key_token_mgr.access_tokens.get('WeChat')
         return f'{URL_WEIXIN_BASE}/{name}?access_token={access_token}{querystring}'
 
     def clash_api_url(self, name, querystring=''):
@@ -1270,7 +1258,7 @@ class APIController:
             url = web.input().get('url')
             if not url: raise Exception('缺少 url')
             self.cross_origin()
-            wxjsapi_mgr.update_access_token(key_token_mgr.configs.get('access_tokens').get('WeChat'))
+            wxjsapi_mgr.update_access_token(key_token_mgr.access_tokens.get('WeChat'))
             param = wxjsapi_mgr.get_sign_param(url=url)
             param['appId'] = APP_PARAM['APPID']
             return success_json(**param)
@@ -1303,7 +1291,7 @@ class APIController:
                         user_mgr.set_day_share_count(openid_invitor, day_share_count + 1)
                         user_mgr.add_invited_user(openid_invitor, openid_login)
                         for credit_type in CREDIT_TYPENAME_DICT:
-                            total_credit = user_mgr.get_total_credit(openid_invitor, credit_type)
+                            total_credit = user_mgr.get_total_service_credit(openid_invitor, credit_type)
                             grant_credit = int(total_credit * SHARE_GRANT_CREDIT_SCALE)
                             granted = user_mgr.grant_credit(openid_invitor, credit_type, grant_credit)
                     if granted:
@@ -1338,9 +1326,9 @@ class APIController:
         """
         生成分享海报
         """
-        openid:str = web.input().get('openid', '').strip()
-        nickname:str = web.input().get('nickname', '').strip()
-        headimgurl:str = web.input().get('headimgurl', '').strip()
+        openid: str = web.input().get('openid', '').strip()
+        nickname: str = web.input().get('nickname', '').strip()
+        headimgurl: str = web.input().get('headimgurl', '').strip()
         headimg_name, headimg_path = self.fetch_image(openid, headimgurl, DIR_IMAGES_AVATAR)
         poster_name, poster_path = poster_mgr.make_poster(openid=openid, nickname=nickname, headimg_path=headimg_path)
         if not poster_name: return fail_json()
@@ -1354,7 +1342,7 @@ class APIController:
         """
         try:
             self.cross_origin()
-            openid:str = web.input().get('openid', '').strip()
+            openid: str = web.input().get('openid', '').strip()
             if not openid: raise Exception('缺少 openid')
             body = web.input(file={})
             filetype = body.file.filename.split('.', 1)[-1]
@@ -1373,7 +1361,7 @@ class APIController:
         web.header('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type')
         web.header('Access-Control-Allow-Methods', 'GET, POST, PUT')
 
-    def POST(self, api_name:str):
+    def POST(self, api_name: str):
         web.header('Content-Type', 'application/json; charset=utf-8')
         if not api_name: api_name = '/'
         seq = api_name[1:].split('/')
@@ -1416,7 +1404,7 @@ class APIController:
                 _thread.start_new_thread(self.process_message, (data.get('xml'),))
                 return 'success'
 
-    def GET(self, api_name:str):
+    def GET(self, api_name: str):
         web.header('Content-Type', 'application/json; charset=utf-8')
         if not api_name: api_name = '/'
         seq = api_name[1:].split('/')
@@ -1427,15 +1415,19 @@ class APIController:
                 return self.update_wx_access_token()
             case ['api-key', 'update']:
                 return self.update_bot_api_key_list()
-            case ['article', 'add']:
-                return self.add_article_url()
-            case ['article', 'list']:
-                offset = web.input().get('offset', 0)
-                return self.list_articles(offset=offset)
-            case ['article', 'remove']:
-                return self.remove_article_url()
+            case ['article', 'media-id', 'add']:
+                return self.add_article_media_id()
+            case ['article', 'media-id', 'remove']:
+                return self.remove_article_media_id()
             case ['article', 'update']:
-                return self.update_article_url_list()
+                return self.update_articles()
+            case ['article', 'url', 'add']:
+                return self.add_article_url()
+            case ['article', 'url', 'remove']:
+                return self.remove_article_url()
+            case ['article', 'wx']:
+                offset = web.input().get('offset', 0)
+                return self.list_wx_articles(offset=offset)
             case ['autoreply', 'update']:
                 return self.update_autoreply()
             case ['debug-code']:
@@ -1478,7 +1470,7 @@ class APIController:
             case ['user', openid]:
                 return self.get_user_info(openid=openid)
             case ['user', openid, 'credit', credit_type, 'set']:
-                return self.set_remaining_credit(openid=openid, credit_type=credit_type)
+                return self.set_remaining_service_credit(openid=openid, credit_type=credit_type)
             case ['user', openid, 'conversation', 'clear']:
                 return self.clear_conversation(openid=openid)
             case ['user', openid, 'pending', 'clear']:
@@ -1506,7 +1498,7 @@ class APIController:
             case _:
                 return self.index()
     
-    def PUT(self, api_name:str):
+    def PUT(self, api_name: str):
         web.header('Content-Type', 'application/json; charset=utf-8')
         if not api_name: api_name = '/'
         seq = api_name[1:].split('/')
@@ -1514,7 +1506,7 @@ class APIController:
             case ['file']:
                 return self.upload_file()
     
-    def OPTIONS(self, api_name:str):
+    def OPTIONS(self, api_name: str):
         web.header('Content-Type', 'application/json; charset=utf-8')
         if not api_name: api_name = '/'
         seq = api_name[1:].split('/')

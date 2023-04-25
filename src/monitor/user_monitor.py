@@ -1,15 +1,17 @@
 from asyncio import new_event_loop, set_event_loop, get_event_loop, sleep
-from logging import Logger
-from manager.user_manager import UserManager
+from logging import getLogger, Logger
 from time import localtime
 
-class UserMonitor:
+from definition.cls import Singleton
+from manager.user_manager import UserManager
+
+class UserMonitor(metaclass=Singleton):
     last_day: str
     user_mgr: UserManager
     logger: Logger = None
 
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('USERMON')
         self.last_day = localtime().tm_mday
         self.user_mgr = kwargs['user_mgr']
 

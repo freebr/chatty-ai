@@ -1,6 +1,7 @@
 azure-cognitiveservices-speech==1.27.0
 beautifulsoup4==4.11.2
 cpca==0.5.5
+duckduckgo-search==2.8.5
 lxml==4.9.2
 lzstring==1.0.4
 numpy==1.23.3
@@ -8,6 +9,7 @@ openai==0.27.4
 pandas==1.5.3
 Pillow==9.4.0
 pycryptodome==3.17
+pypinyin==0.48.0
 PyYAML==6.0
 qrcode==7.4.2
 redis==4.5.4

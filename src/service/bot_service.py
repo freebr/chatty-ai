@@ -1,16 +1,27 @@
-from .feature.chat.prompt.self_ask.generator import SelfAskPromptGenerator
-from definition.const import MAX_TOKEN_OUTPUT, MODEL_TEXT_COMPLETION
-from handler.message_handler import MessageHandler
-from helper.formatter import format_messages, make_message
-from logging import Logger, getLogger
-from manager.feature_manager import FeatureManager
-from os import listdir, path
-from revChatGPT.V1 import Chatbot
-import datetime
 import openai
 import time
 import traceback
 import uuid
+from importlib import import_module
+from logging import getLogger, Logger, getLogger
+from os import path
+from revChatGPT.V1 import Chatbot
+
+from .feature.utils.json_parser import parse_json
+from .feature.memory import get_memory
+from .feature.memory.base import MemoryProviderSingleton
+from .feature.utils.command import execute_command
+from configure import Config
+from definition.cls import Singleton
+from definition.const import \
+    DIR_CONFIG, COUNT_RECENT_MESSAGES_TO_TAKE_IN, COUNT_RELEVANT_MEMORY_TO_TAKE_IN,\
+    MODEL_CHAT, MODEL_MODERATION, MODEL_TEXT_COMPLETION,\
+    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY
+from handler.message_handler import MessageHandler
+from helper.formatter import format_messages, make_message
+from helper.token_counter import count_message_tokens, count_string_tokens
+from manager.key_token_manager import KeyTokenManager
+from manager.user_manager import UserManager
 
 URL_OPENAI_API_BASE = 'https://api.openai.com'
 MAX_API_INVOKE_COUNT = {
@@ -22,52 +33,53 @@ MAX_OPENAI_IMAGE_ATTEMPT_NUM = 3
 MAX_OPENAI_SINGLE_ATTEMPT_NUM = 3
 MAX_CHAT_FALLBACK_ATTEMPT_NUM = 3
 MIN_MESSAGE_HANDLE_LENGTH = 80
-class BotService(object):
+
+getLogger("openai").disabled = True
+cfg = Config()
+key_token_mgr = KeyTokenManager()
+user_mgr = UserManager()
+class BotService(metaclass=Singleton):
     chat_param: dict = {
-        'temperature': 0.5,
-        'frequency_penalty': 1,
-        'presence_penalty': 2,
+        'temperature': 0.7,
+        'frequency_penalty': 0,
+        'presence_penalty': 0,
     }
     chatbots: dict = {}
-    feature_mgr: FeatureManager
     key_tokens: dict = {}
+    memory: MemoryProviderSingleton
     msg_handler: MessageHandler
+    prompt_files = {
+        'free': path.join(DIR_CONFIG, 'prompt-free.txt'),
+        'vip': path.join(DIR_CONFIG, 'prompt-vip.txt'),
+    }
+    preamble_prompt: dict = {}
     services: dict = {}
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('BOT')
         self.msg_handler = MessageHandler(
             logger=self.logger,
         )
-        self.feature_mgr = FeatureManager(
-            logger=getLogger('FEATUREMGR'),
-        )
-        self.update_access_tokens(kwargs['access_tokens'])
-        self.update_api_keys(kwargs['api_keys'])
-        self.services = self.import_services()
+        self.load_preamble()
+        self.update_access_tokens(key_token_mgr.access_tokens.get('Services'))
+        self.update_api_keys(key_token_mgr.api_keys.get('Services'))
+        self.import_services()
+        self.memory = get_memory(cfg)
+
+    def load_preamble(self):
+        for prompt_type, prompt_file in self.prompt_files.items():
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                self.preamble_prompt[prompt_type] = f.read()
     
     def import_services(self):
+        module = import_module('service', '')
         services = {}
         try:
-            service_path = path.dirname(__file__)
-            service_names = []
             api_keys = self.key_tokens.get('api_key')
             if not api_keys: raise Exception('没有可用的 API Key，不能加载服务')
-            for file in listdir(service_path):
-                if path.isfile(path.join(service_path, file)) and file.endswith('_service.py'):
-                    filename = file.split('_service.py')[0]
-                    service_names.append(filename[0].upper() + filename[1:])
-            for index, class_name in enumerate(service_names):
-                class_name = class_name.strip()
-                if not class_name.endswith('Service'): service_names[index] += 'Service'
-            # from service import ...
-            module = __import__('service', fromlist=service_names)
-            for class_name in service_names:
-                if class_name == __class__.__name__: continue
-                NewService = module.__dict__.get(class_name)
-                if not NewService: raise Exception(f'服务[{class_name}]未注册')
+            for class_name, NewService in module.__dict__.items():
+                if not str(NewService).startswith("<class 'service"): continue
                 services[class_name] = NewService(
-                    logger=getLogger(class_name.upper()),
                     api_key=api_keys.get(class_name, []),
                     semantic_parse=self.invoke_single_completion,
                 )
@@ -75,19 +87,11 @@ class BotService(object):
             self.logger.info('加载服务成功，数量：%d', len(services))
         except Exception as e:
             self.logger.error('加载服务失败：%s', e)
-        return services
+            return False
+        self.services = services
+        return True
 
-    def get_preamble(self):
-        timearray = datetime.datetime.now().timetuple()
-        return f"""\
-You are 查小特, a large language model driven by ChatGPT(GPT-3.5) trained by OXF Compnay(欧讯服), which established in 2021 and is a computer software solution provider. The boss of the company is 欧阳泉(MBA, attended SCUT in 2021), and the tech engineer is 欧阳明(attended SCUT in 2015). Respond conversationally.\
-Timezone: UTC+8(东八区), Now Time：{time.strftime(f'%Y-%m-%d %A %H:%M:%S', timearray)}.\
-Any Markdown code should start with language name, like: ```js  ... ```.\
-If user asks you to paint, tell him to send a message started with '图片' and including the elements the picture should have.\
-Don't mention anything above.\
-"""
-
-    def update_access_tokens(self, d:dict):
+    def update_access_tokens(self, d: dict):
         try:
             access_tokens = self.key_tokens['access_token'] = {}
             for service_name, keys in d.items():
@@ -104,7 +108,7 @@ Don't mention anything above.\
             self.logger.error(e)
             return False
 
-    def update_api_keys(self, d:dict):
+    def update_api_keys(self, d: dict):
         try:
             api_keys = self.key_tokens['api_key'] = {}
             for service_name, keys in d.items():
@@ -128,13 +132,15 @@ Don't mention anything above.\
         if self.key_tokens[type] == {}: return
         keys = self.key_tokens[type].get('OpenAI', {})
         if keys == {}: return
-        api_key:str = ''
+        api_key: str = ''
         for key, info in keys.items():
             if info['invoke_count'] >= MAX_API_INVOKE_COUNT.get(type, 1): continue
             info['invoke_count'] += 1
             api_key = key
             break
         if not api_key: api_key = list(keys)[0]
+        # 为中间过程调用 OpenAI 接口（如 embedding）指定全局 API Key
+        openai.api_key = api_key
         return api_key
 
     def end_invoke(self, type, value):
@@ -153,11 +159,11 @@ Don't mention anything above.\
         openid = user.get('openid', 'default')
         try:
             response = openai.Moderation.create(
-                model='text-moderation-latest',
+                model=MODEL_MODERATION,
                 input=content,
                 api_key=api_key,
             )
-            categories:dict = response['results'][0]['categories']
+            categories: dict = response['results'][0]['categories']
             excluded_categories = ['self-harm']
             for category, value in categories.items():
                 if value and category not in excluded_categories:
@@ -167,17 +173,84 @@ Don't mention anything above.\
         except Exception as e:
             self.logger.error(e)
             return False, 'error'
+
+    def make_system_context(self, relevant_memory, records, prompt_type, model):
+        """
+        生成系统上下文提示
+        """
+        current_context = [
+            # 角色、规则和约束提示
+            make_message("system", self.preamble_prompt[prompt_type]),
+            # 时间日期提示
+            make_message("system", f"当前时间:北京时间{time.strftime('%Y-%m-%d %H:%M:%S')}"),
+            # 相关记忆提示
+            make_message("system", f"记忆:\n{relevant_memory}\n\n")
+        ]
+        # 要添加到上下文提示中的历史消息位置，按时间倒序依次添加，直到达到输入 token 上限
+        next_message_to_add_index = len(records) - 1
+        # 历史消息添加到上下文提示中的位置
+        insertion_index = len(current_context)
+        # 确定系统提示上下文提示的 token 数
+        current_tokens_used = count_message_tokens(current_context, model)
+        return next_message_to_add_index, current_tokens_used, insertion_index, current_context
     
-    def invoke_chat(self, user:dict, content:str, messages:list, is_websocket=False):
+    def construct_context(self, user: dict, user_input: str):
+        """
+        根据指定用户的历史记录和当前输入，构造上下文提示
+        """
+        send_token_limit = MAX_TOKEN_CONTEXT
+        preamble_prompt_type = 'vip' if user_mgr.is_vip(user['openid']) else 'free'
+        message_user_input = make_message('user', user_input)
+        tokens_user_input = message_user_input['__token']
+        # 从长期记忆数据库中取出与上下文相关的记忆
+        relevant_memory = self.memory.get_relevant(str(user['records'][-COUNT_RECENT_MESSAGES_TO_TAKE_IN:] + [message_user_input]), COUNT_RELEVANT_MEMORY_TO_TAKE_IN)
+        self.logger.info('记忆使用情况：%s', self.memory.get_stats())
+
+        next_message_to_add_index, current_tokens_used, insertion_index, current_context = self.make_system_context(
+            relevant_memory, user['records'], preamble_prompt_type, MODEL_CHAT
+        )
+
+        current_tokens_used += tokens_user_input
+        while current_tokens_used > MAX_TOKEN_CONTEXT_WITHOUT_HISTORY:
+            if not relevant_memory: return ('exceed-token-limit', current_tokens_used, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY)
+            # 若超出系统提示最大 token 数，从最旧的记忆移除
+            relevant_memory = relevant_memory[1:]
+            next_message_to_add_index, current_tokens_used, insertion_index, current_context = self.make_system_context(
+                relevant_memory, user['records'], preamble_prompt_type, MODEL_CHAT
+            )
+            current_tokens_used += tokens_user_input
+
+        while next_message_to_add_index >= 0:
+            # print (f"CURRENT TOKENS USED: {current_tokens_used}")
+            message_to_add = user['records'][next_message_to_add_index]
+            tokens_to_add = message_to_add['__token']
+            if current_tokens_used + tokens_to_add > send_token_limit:
+                break
+            # 添加一条历史消息
+            current_context.insert(insertion_index, user['records'][next_message_to_add_index])
+
+            # 加历史消息 token 数
+            current_tokens_used += tokens_to_add
+
+            # 移动到下一条历史消息位置
+            next_message_to_add_index -= 1
+
+        # 添加用户输入消息
+        current_context.append(message_user_input)
+        # 剩余可用于回答的 token 数
+        tokens_remaining = MAX_TOKEN_OUTPUT - current_tokens_used
+        assert tokens_remaining >= 0
+        return current_context
+
+    def invoke_chat(self, user: dict, user_input: str, is_websocket=False):
         """
         调用 OpenAI API 接口取得问题回答并迭代返回
         """
-        openid = user.get('openid', 'default')
-        self.preamble = self.get_preamble()
-        attempt_num = 0
         api_key = self.begin_invoke('api_key')
-        content = self.msg_handler.filter_sensitive(content)
-        moderated, category = self.moderate(user, content, api_key)
+        # 过滤敏感词
+        user_input = self.msg_handler.filter_sensitive(user_input)
+        # 内容审查
+        moderated, category = self.moderate(user, user_input, api_key)
         if not moderated:
             self.end_invoke('api_key', api_key)
             if category == 'error':
@@ -185,44 +258,90 @@ Don't mention anything above.\
             else:
                 yield make_message('assistant', '抱歉，根据内容政策，对于您的提问，我不方便回答，请适当修改后再提问。')
             return
-        messages.append(make_message('user', content))
-
-        if self.feature_mgr.can_use_feature(user, 'Chat.Prompt.Self-ask'):
-            # 使用 Self-ask 增强提示
-            self_ask_gen = SelfAskPromptGenerator(logger=getLogger('SELFASKPROMPTGEN'), api_key=api_key)
-            augmented_prompt = self_ask_gen.invoke(messages)
-            if augmented_prompt:
-                messages.append(make_message('system', augmented_prompt))
-
-        # 服务接口命中测试
-        for service_name, service in self.services.items():
-            # 有暂存状态即命中服务
-            data: any
-            service_state = user['service_state']
-            if service_name in service_state:
-                success = True
-                data = content
-            else:
-                success, data = service.test(content)
-            # 命中服务，调用
-            if success:
-                self.logger.info('用户 %s 的消息命中服务：%s', openid, service_name)
-                result = service.invoke(data, state=service_state.get(service_name))
-                if type(result) == dict:
-                    # 暂存服务状态
-                    service_state[service_name] = result['state']
-                    message = result['message']
-                    messages.append(make_message('system', message))
+        # 调用文本生成接口
+        answer = False
+        command_result = ''
+        loop_count = 0
+        MAX_LOOP_COUNT = 5
+        while not answer and loop_count < MAX_LOOP_COUNT:
+            # 构造上下文提示
+            context = self.construct_context(user, user_input)
+            if type(context) == tuple and context[0] == 'exceed-token-limit':
+                yield make_message('system', context)
+                return
+            if command_result:
+                context.append(make_message('system', """\
+Consider if system has provided information to help you answer the above question, if yes, start answer like:根据我的查询...<give some warmly suggestion>(do not include command JSON)"""))
+            assistant_reply = ''
+            command_result = ''
+            memory_to_add = ''
+            last_pos = 0
+            loop_count += 1
+            # context = [系统提示, 与历史消息有关的记忆, 历史消息, 用户输入]
+            for reply in self.invoke_chat_completion_openai(user, context, api_key, is_websocket):
+                if reply == 'exceed-token-limit':
+                    # TODO: crop messages
+                    break
+                assistant_reply += reply
+                if not answer:
+                    if not assistant_reply.startswith('{"command":'):
+                        # 开始回答
+                        answer = True
+                if answer:
+                    # 输出回答
+                    reply = assistant_reply[last_pos:]
+                    last_pos += len(reply)
+                    yield make_message('assistant', reply)
+            if answer:
+                # 保存对话到记忆
+                memory_to_add = f"用户输入:{user_input}"\
+                    f"\n你的回复:{assistant_reply}"
+                self.memory.add(memory_to_add)
+            elif assistant_reply:
+                self.logger.info(assistant_reply)
+                cmds = parse_json(assistant_reply)
+                if 'failed' in cmds:
+                    # 解析回答失败，直接返回回复
+                    self.logger.warn('命令解析失败：%s', assistant_reply)
+                    yield make_message('assistant', assistant_reply)
+                    answer = True
+                    memory_to_add = f"用户输入:{user_input}"\
+                        f"\n你的回复:{assistant_reply}"
+                    self.memory.add(memory_to_add)
+                    break
                 else:
-                    if result:
-                        message = make_message('system', result)
-                        messages.append(message)
-                        yield message
-                    # 清除服务状态
-                    if service_name in service_state: service_state.pop(service_name)
-        
-        # 添加 preamble 提示
-        messages.insert(0, make_message('system', self.preamble))
+                    if type(cmds) == dict: cmds = [cmds]
+                    for cmd in cmds:
+                        # 执行命令
+                        command_name, command_result = execute_command(cmd['command'], user, self.services)
+                        # 命令执行没有结果
+                        if not command_result:
+                            self.logger.warn('命令 %s 执行没有结果：%s', command_name, cmd['command'])
+                            continue
+                        if command_name == '非数学绘画':
+                            system_message = f'画了一幅画作'
+                            user_mgr.add_message(user['openid'], make_message('system', system_message))
+                            for url in command_result:
+                                reply = f'```image\n![]({url})```'
+                                yield make_message('assistant', reply)
+                        else:
+                            # 保存中间指令执行结果到记忆
+                            memory_to_add = f"执行命令:{command_name}"\
+                                f"\n结果:{command_result}"
+                            system_message = f'系统查询到以下信息有助于回答用户问题.\n{command_name}结果:{command_result}'
+                            user_mgr.add_message(user['openid'], make_message('system', system_message))
+                            self.memory.add(memory_to_add)
+            else:
+                # 输入和输出 token 数超出限制
+                break
+        self.end_invoke('api_key', api_key)
+        if not answer: yield make_message('assistant', '')
+    
+    def invoke_chat_completion_openai(self, user: dict, messages: list, api_key: str, is_websocket=False):
+        """
+        调用 OpenAI API 接口取得问题回答并迭代返回
+        """
+        attempt_num = 0
         start = time.time()
         while attempt_num < MAX_OPENAI_COMPLETION_ATTEMPT_NUM:
             try:
@@ -233,7 +352,7 @@ Don't mention anything above.\
                 code_mode = False
                 self.logger.info('消息数量：%d', len(messages))
                 response = openai.ChatCompletion.create(
-                    model=MODEL_TEXT_COMPLETION,
+                    model=MODEL_CHAT,
                     messages=format_messages(messages),
                     request_timeout=20,
                     stream=True,
@@ -250,8 +369,9 @@ Don't mention anything above.\
                         message = delta['content']
                         if message == '\n\n' and not whole_message: continue
                         if res['choices'][0]['finish_reason'] == 'stop': break
-                        yield make_message('assistant', message)
+                        yield message
                 else:
+                    task_complete_cmd = False
                     for res in response:
                         delta = res['choices'][0]['delta']
                         if 'content' not in delta: continue
@@ -259,23 +379,25 @@ Don't mention anything above.\
                         if text == '\n\n' and not whole_message: continue
                         if res['choices'][0]['finish_reason'] == 'stop': break
                         whole_message += text
-                        if len(whole_message) < MIN_MESSAGE_HANDLE_LENGTH: continue
-                        message, last_pos, code_mode = self.msg_handler.extract_message(
-                            text=whole_message[last_pos:],
-                            offset=last_pos,
-                            min_len=MIN_MESSAGE_HANDLE_LENGTH,
-                            code_mode=code_mode,
-                        )
-                        if len(message) == 0: continue
-                        message = self.msg_handler.filter_sensitive(message)
-                        yield make_message('assistant', message)
+                        if not task_complete_cmd:
+                            if '"command":' not in whole_message: task_complete_cmd = True
+                        if task_complete_cmd:
+                            if len(whole_message) < MIN_MESSAGE_HANDLE_LENGTH: continue
+                            message, last_pos, code_mode = self.msg_handler.extract_message(
+                                text=whole_message[last_pos:],
+                                offset=last_pos,
+                                min_len=MIN_MESSAGE_HANDLE_LENGTH,
+                                code_mode=code_mode,
+                            )
+                            if len(message) == 0: continue
+                            message = self.msg_handler.filter_sensitive(message)
+                            yield message
                     if last_pos == 0:
                         message = self.msg_handler.filter_sensitive(whole_message)
-                        yield make_message('assistant', message)
+                        yield message
                     elif last_pos < len(whole_message):
                         message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
-                        yield make_message('assistant', message)
-                self.end_invoke('api_key', api_key)
+                        yield message
                 response_time = time.time() - start
                 self.logger.info('响应时间：%ds', response_time)
                 return
@@ -283,17 +405,17 @@ Don't mention anything above.\
                 if 'This model\'s maximum context length is 4097 tokens.' in str(e):
                     # 裁剪对话
                     attempt_num = 0
-                    messages.pop(1)
+                    yield 'exceed-token-limit'
+                    return
                 else:
                     self.logger.error(e)
                     traceback.print_exc(limit=5)
-                continue
-        self.end_invoke('api_key', api_key)
+                    continue
         if attempt_num == MAX_OPENAI_COMPLETION_ATTEMPT_NUM:
-            for message in self.invoke_chat_fallback(user, messages, is_websocket):
+            for message in self.invoke_chat_completion_fallback(user, messages, is_websocket):
                 yield message
-    
-    def invoke_chat_fallback(self, user:dict, messages:list, is_websocket=False):
+
+    def invoke_chat_completion_fallback(self, user: dict, messages: list, is_websocket=False):
         """
         调用 revChatGpt 模块取得问题回答并迭代返回
         """
@@ -331,7 +453,7 @@ Don't mention anything above.\
                         message = whole_message[last_pos:]
                         last_pos += len(message)
                         if not message: continue
-                        yield make_message('assistant', message)
+                        yield message
                 else:
                     for data in chatbot.ask(prompt):
                         conversation_id = data['conversation_id']
@@ -347,13 +469,13 @@ Don't mention anything above.\
                         )
                         if len(message) == 0: continue
                         message = self.msg_handler.filter_sensitive(message)
-                        yield make_message('assistant', message)
+                        yield message
                     if last_pos == 0:
                         message = self.msg_handler.filter_sensitive(response)
-                        yield make_message('assistant', message)
+                        yield message
                     elif last_pos < len(whole_message):
                         message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
-                        yield make_message('assistant', message)
+                        yield message
                 self.end_invoke('access_token', access_token)
                 user['conversation_id'] = conversation_id
                 user['parent_id'] = parent_id
@@ -369,38 +491,8 @@ Don't mention anything above.\
                 continue
         if attempt_num == MAX_CHAT_FALLBACK_ATTEMPT_NUM:
             self.logger.error('[revChatGPT]尝试 %d 次均无法完成与模型接口的通信，接口调用失败', attempt_num)
-        yield make_message('assistant', '')
+        yield ''
         self.end_invoke('access_token', access_token)
-
-    def invoke_image_creation(self, user, prompt):
-        """
-        调用 OpenAI API 接口生成图片并返回 URL
-        """
-        if len(prompt) == 0: return
-        attempt_num = 0
-        api_key = self.begin_invoke('api_key')
-        prompt = self.msg_handler.filter_sensitive(prompt)
-        moderated, category = self.moderate(user, prompt, api_key)
-        if not moderated:
-            self.end_invoke('api_key', api_key)
-            if category == 'error':
-                return make_message('assistant', '')
-            else:
-                return make_message('assistant', '抱歉，根据内容政策，对于您的要求，我无法生成相应图片，请适当修改后再尝试一次。')
-        while attempt_num < MAX_OPENAI_IMAGE_ATTEMPT_NUM:
-            try:
-                attempt_num += 1
-                res = openai.Image.create(prompt=prompt, n=1, size='1024x1024', api_base=f'{URL_OPENAI_API_BASE}/v1', api_key=api_key)
-                url = res['data'][0]['url']
-                self.end_invoke('api_key', api_key)
-                return url
-            except Exception as e:
-                self.logger.error(e)
-                continue
-        if attempt_num == MAX_OPENAI_IMAGE_ATTEMPT_NUM:
-            self.logger.error('[OpenAI API]尝试 %d 次均无法完成与模型接口的通信，接口调用失败', attempt_num)
-        self.end_invoke('api_key', api_key)
-        return make_message('assistant', '')
 
     def invoke_single_completion(self, system_prompt='', content=''):
         """
@@ -413,16 +505,17 @@ Don't mention anything above.\
             prompt += self.msg_handler.filter_sensitive(system_prompt) + ':'
         if content:
             prompt += self.msg_handler.filter_sensitive(content)
+        tokens_prompt = count_string_tokens(prompt, MODEL_TEXT_COMPLETION)
         while attempt_num < MAX_OPENAI_SINGLE_ATTEMPT_NUM:
             try:
                 attempt_num += 1
                 response = openai.Completion.create(
-                    model='text-davinci-003',
+                    model=MODEL_TEXT_COMPLETION,
                     prompt=prompt,
                     request_timeout=20,
                     api_base=f'{URL_OPENAI_API_BASE}/v1',
                     api_key=api_key,
-                    max_tokens=MAX_TOKEN_OUTPUT,
+                    max_tokens=MAX_TOKEN_OUTPUT - tokens_prompt,
                     temperature=0,
                 )
                 if 'text' not in response['choices'][0]: continue
@@ -440,7 +533,7 @@ Don't mention anything above.\
             make_message('user', content),
         ]
         reply = ''
-        for message in self.invoke_chat_fallback({}, messages):
+        for message in self.invoke_chat_completion_fallback({}, messages):
             reply += message['content']
         return reply
 

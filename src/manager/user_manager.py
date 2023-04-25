@@ -1,38 +1,46 @@
-from definition.const import DIR_USERS, CREDIT_TYPENAME_DICT, MAX_TOKEN_INPUT_CONTEXT
-from helper.formatter import now
-from logging import Logger
-from os import path
 import json
 import redis
 import time
 import uuid
+from base64 import b64decode
+from logging import getLogger, Logger
+from os import path
+
+from configure import Config
+from definition.cls import Singleton
+from definition.const import DIR_USERS, CREDIT_TYPENAME_DICT, MAX_TOKEN_CONTEXT
+from definition.var import is_docker
+from helper.formatter import now
+from manager.feature_manager import FeatureManager
 
 KEY_USER_OPENID = 'USERS'
 KEY_USER_INFO = 'USER:%s'
 EXCLUDED_DUMP_KEYS = ['ws']
-class UserManager:
-    cache: redis.StrictRedis
-    default_credit:dict
-    default_credit_vip:dict
+
+cfg = Config()
+class UserManager(metaclass=Singleton):
+    db: redis.StrictRedis
+    default_credit: dict
+    default_credit_vip: dict
+    feature_mgr: FeatureManager
     # VIP 等级
-    vip_levels:list
+    vip_levels: list
     # VIP 价格
-    vip_prices:dict
+    vip_prices: dict
     # VIP 权益描述
-    vip_rights:dict
+    vip_rights: dict
     # VIP 用户 ID
-    vip_dict:dict
+    vip_dict: dict
     # 普通用户称谓
-    free_level:str
+    free_level: str
     # 最高 VIP 用户称谓
-    highest_level:str
+    highest_level: str
     # VIP 用户记录文件
     vip_file_path = path.join(DIR_USERS, 'vip-list.json')
     logger: Logger = None
 
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.cache = kwargs['cache']
+        self.logger = getLogger('USERMGR')
         self.users = {}
         self.vip_levels = kwargs['vip_levels']
         self.vip_prices = {}
@@ -49,8 +57,17 @@ class UserManager:
             self.default_credit[type] = kwargs['credit'][self.free_level][type]
             for level in self.vip_levels:
                 self.default_credit_vip[level][type] = kwargs['credit'][level][type]
-        self.read_vip_list()
+        self.feature_mgr = FeatureManager(logger=self.logger)
+        self.init_db()
+        self.load_vip_list()
         self.load_all_users()
+
+    def init_db(self):
+        redis_config = cfg.data.databases['Redis']
+        redis_host = redis_config.get('Production' if is_docker() else 'Development').get('Host')
+        redis_port = redis_config.get('Production' if is_docker() else 'Development').get('Port')
+        redis_password = b64decode(redis_config.get('Password')).decode()
+        self.db = redis.StrictRedis(host=redis_host, port=redis_port, db=0, password=redis_password, decode_responses=True)
 
     def register_user(self, openid):
         """
@@ -82,8 +99,8 @@ class UserManager:
             'wx_user_info': {},
         }
         for type in CREDIT_TYPENAME_DICT:
-            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-            self.reset_remaining_credit(openid, type)
+            self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+            self.reset_remaining_service_credit(openid, type)
         self.dump_user(openid)
         return self.users[openid]
 
@@ -108,8 +125,8 @@ class UserManager:
                 # 重置额度信息
                 level = self.get_vip_level(openid)
                 for type in CREDIT_TYPENAME_DICT:
-                    self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-                    self.reset_remaining_credit(openid, type)
+                    self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+                    self.reset_remaining_service_credit(openid, type)
             if kwargs.get('reset_daily_data', False):
                 # 重置每日数据
                 updates['daily_data'] = self.get_initial_daily_data()
@@ -145,6 +162,7 @@ class UserManager:
         return {
             'day_share_count': 0,
             'signup': False,
+            'feature_credit': {},
         }
 
     def reset_daily_data(self, openid):
@@ -164,7 +182,7 @@ class UserManager:
             if not self.reset_daily_data(openid): return False
         return True
 
-    def clip_conversations(self, openid, max_tokens=MAX_TOKEN_INPUT_CONTEXT):
+    def clip_conversations(self, openid, max_tokens=MAX_TOKEN_CONTEXT):
         """
         返回指定用户之前不超过指定 token 数的对话组成的列表
         """
@@ -174,7 +192,7 @@ class UserManager:
         tokens = 0
         for i in range(-1, -len(records), -1):
             token = records[i]['__token']
-            if tokens + token > MAX_TOKEN_INPUT_CONTEXT: break
+            if tokens + token > MAX_TOKEN_CONTEXT: break
             ret.append(records[i])
             tokens += token
         return ret
@@ -251,7 +269,7 @@ class UserManager:
         self.users[openid]['voice_role'] = role
         self.dump_user(openid)
 
-    def reduce_remaining_credit(self, openid, type):
+    def reduce_service_credit(self, openid, type):
         """
         使指定用户的指定类型的可用次数减一
         """
@@ -262,7 +280,7 @@ class UserManager:
         self.dump_user(openid)
         return True
 
-    def get_remaining_credit(self, openid, type):
+    def get_remaining_service_credit(self, openid, type):
         """
         获取指定用户的指定类型的剩余可用次数
         """
@@ -274,7 +292,7 @@ class UserManager:
         if type not in CREDIT_TYPENAME_DICT: return 0
         return self.users[openid]['remaining_credit'][type]
 
-    def set_remaining_credit(self, openid, type, value=0):
+    def set_remaining_service_credit(self, openid, type, value=0):
         """
         设置指定用户的指定类型的剩余可用次数
         """
@@ -284,7 +302,7 @@ class UserManager:
         self.dump_user(openid)
         return True
 
-    def reset_remaining_credit(self, openid, type):
+    def reset_remaining_service_credit(self, openid, type):
         """
         重置指定用户的指定类型的剩余可用次数为默认次数
         """
@@ -295,7 +313,7 @@ class UserManager:
         self.dump_user(openid)
         return True
 
-    def get_total_credit(self, openid, type):
+    def get_total_service_credit(self, openid, type):
         """
         获取指定用户的指定类型的总可用次数
         """
@@ -305,13 +323,60 @@ class UserManager:
         if type not in CREDIT_TYPENAME_DICT: return 0
         return self.users[openid]['total_credit'][type]
 
-    def set_total_credit(self, openid, type, value=0):
+    def set_total_service_credit(self, openid, type, value=0):
         """
         设置指定用户的指定类型的总可用次数
         """
         if openid not in self.users: return False
         if type not in CREDIT_TYPENAME_DICT: return False
         self.users[openid]['total_credit'][type] = value
+        self.dump_user(openid)
+        return True
+
+    def get_total_feature_credit(self, openid, feature):
+        """
+        获取指定用户的指定特性的总可用次数
+        """
+        if openid not in self.users:
+            level = self.get_vip_level(openid)
+            total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        else:
+            feature_info = self.users[openid]['daily_data']['feature_credit'].get(feature, {})
+            if not feature_info: return -1
+            total_credit = feature_info['total']
+        return total_credit
+
+    def get_remaining_feature_credit(self, openid, feature):
+        """
+        获取指定用户的指定特性的剩余可用次数
+        """
+        level = self.get_vip_level(openid)
+        if openid not in self.users:
+            remaining_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        else:
+            feature_info = self.users[openid]['daily_data']['feature_credit'].get(feature, {})
+            if feature_info:
+                remaining_credit = feature_info['remaining']
+            else:
+                remaining_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        return remaining_credit
+
+    def reduce_feature_credit(self, openid, feature):
+        """
+        使指定用户的指定特性的当日可用次数减一
+        """
+        if openid not in self.users: return False
+        feature_info = self.users[openid]['daily_data']['feature_credit'].get(feature, {})
+        if not feature_info:
+            level = self.get_vip_level(openid)
+            total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+            feature_info = {
+                'total': total_credit,
+                'remaining': total_credit,
+            }
+        if feature_info['remaining'] <= 0: return False
+        feature_info['remaining'] -= 1
+        self.users[openid]['daily_data']['feature_credit'][feature] = feature_info
         self.dump_user(openid)
         return True
 
@@ -389,7 +454,7 @@ class UserManager:
         self.users[openid]['invited_users'].append(invited_open_id)
         self.dump_user(openid)
         
-    def read_vip_list(self):
+    def load_vip_list(self):
         if not path.isfile(self.vip_file_path):
             self.logger.error('VIP 用户列表加载失败，找不到文件：%s', self.vip_file_path)
             return False
@@ -432,8 +497,8 @@ class UserManager:
         self.remove_vip(openid)
         self.vip_dict[level].append(openid)
         for type in CREDIT_TYPENAME_DICT:
-            self.set_total_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-            self.reset_remaining_credit(openid, type)
+            self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
+            self.reset_remaining_service_credit(openid, type)
         self.save_vip_list()
         user = self.users.get(openid)
         if user: user['level'] = level
@@ -497,8 +562,8 @@ class UserManager:
         return self.users[openid]['login_time']
 
     def grant_credit(self, openid, credit_type, grant_credit):
-        remaining_credit = self.get_remaining_credit(openid, credit_type)
-        self.set_remaining_credit(openid, credit_type, remaining_credit + grant_credit)
+        remaining_credit = self.get_remaining_service_credit(openid, credit_type)
+        self.set_remaining_service_credit(openid, credit_type, remaining_credit + grant_credit)
         return True
 
     def get_login_user_list(self):
@@ -522,8 +587,10 @@ class UserManager:
         for key in self.users[openid]:
             if key in EXCLUDED_DUMP_KEYS: continue
             user[key] = self.users[openid][key]
-        self.cache.set(KEY_USER_INFO % openid, json.dumps(user, ensure_ascii=False))
-        self.cache.hset(KEY_USER_OPENID, openid, time.time())
+        pipe = self.db.pipeline()
+        pipe.set(KEY_USER_INFO % openid, json.dumps(user, ensure_ascii=False))
+        pipe.hset(KEY_USER_OPENID, openid, time.time())
+        pipe.execute()
         return True
 
     def dump_all_users(self):
@@ -540,7 +607,7 @@ class UserManager:
         """
         从 Redis 加载指定用户信息
         """
-        data = self.cache.get(KEY_USER_INFO % openid)
+        data = self.db.get(KEY_USER_INFO % openid)
         if data is None: return False
         try:
             user = json.loads(data)
@@ -557,7 +624,7 @@ class UserManager:
         """
         从 Redis 加载全部用户信息
         """
-        openids = self.cache.hkeys(KEY_USER_OPENID)
+        openids = self.db.hkeys(KEY_USER_OPENID)
         for openid in openids:
             self.load_user(openid)
         self.logger.info('加载用户信息成功，数量：%d', len(openids))

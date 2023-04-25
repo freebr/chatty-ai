@@ -10,7 +10,7 @@ class StaticController:
     def __init__(self):
         self.logger = logging.getLogger('STATICCTLR')
     
-    def try_request_file(self, req_path:str):
+    def try_request_file(self, req_path: str):
         query = web.changequery()[len(req_path):]
         self.logger.info('Request: %s', req_path)
         if req_path[0] == '/': req_path = req_path[1:]
@@ -40,6 +40,6 @@ class StaticController:
         web.header('Content-Type', f'{content_type}')
         return data
 
-    def GET(self, req_path:str):
+    def GET(self, req_path: str):
         if not req_path: req_path = ''
         return self.try_request_file(req_path)

@@ -1,32 +1,31 @@
-from logging import Logger
-from random import random
-import json
+import pypinyin
 import re
 import requests.api as requests
+from configure import Config
+from logging import getLogger, Logger
+from random import random
 
-class ExpressService:
-    semantic_parse: any
+from definition.cls import Singleton
+
+cfg = Config()
+class ExpressService(metaclass=Singleton):
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.semantic_parse = kwargs['semantic_parse']
+        self.logger = getLogger("EXPRESSSERVICE")
 
-    def __real_query(self, input):
+    def __real_query(self, query):
         """
         查询快递物流信息
         """
         try:
-            company_name = input.get('company_name')
-            company_code = input.get('company_code')
-            express_no = input.get('express_no')
-            phone = input.get('phone')
+            company_name = query.get('company_name')
+            company_code = query.get('company_code')
+            tracking_number = query.get('tracking_number')
+            phone = query.get('phone')
             if not company_name or not company_code:
-                return {
-                    'state': input,
-                    'message': '请询问用户提供快递公司的名称',
-                }
+                return '请询问用户提供快递公司的名称'
             # 获取 csrf token 和 wwwid
-            url = f'https://m.kuaidi100.com/app/query/?coname=oxf-tech&nu={express_no}&com={company_code}'
+            url = f'https://m.kuaidi100.com/app/query/?coname=oxf-tech&nu={tracking_number}&com={company_code}'
             res = requests.get(url)
             set_cookie = res.headers['Set-Cookie']
             csrf_token = re.findall('csrftoken=(.*?);', set_cookie)[0]
@@ -37,7 +36,7 @@ class ExpressService:
                 'coname': 'oxf-tech',
                 'id': 1,
                 'platform': 'MWWW',
-                'postid': express_no,
+                'postid': tracking_number,
                 'temp': str(random()),
                 'type': company_code,
                 'phone': phone,
@@ -46,126 +45,49 @@ class ExpressService:
             }
             headers = {
                 'Cookie': f'csrftoken={csrf_token}; WWWID={wwwid}',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36 Edg/112.0.1722.39',
+                'User-Agent': cfg.data.features['UserAgent'],
             }
             res = requests.post(url, data=form_data, headers=headers).json()
             # 快递公司要求提供验证码（即收/寄件人手机号码后四位）
             self.logger.info(res['status'])
             if res['status'] == '408':
-                return {
-                    'message': f'{company_name}要求，请询问用户提供收件人或寄件人手机号码后四位才能查询单号{express_no}的快递信息',
-                }
+                return f'{company_name}要求，请询问用户提供收件人或寄件人手机号码后四位才能查询单号{tracking_number}的快递信息'
             result = res['data']
             if len(result) == 0:
                 self.logger.warn('快递信息查询结果为空')
-                return ['快递信息查询结果为空，可能单号或提供的手机号码有误']
+                return '快递信息查询结果为空，可能单号或提供的手机号码有误'
             results = ['{}：{}'.format(item['ftime'], item['context']) for item in result]
-            return results
+            return ''.join(results)
         except Exception as e:
-            self.logger.error('查询快递信息失败：%s', e)
-            return ['快递信息查询结果为空，可能单号或提供的手机号码有误']
+            self.logger.error('查询快递信息失败：%s', str(e))
+            return '快递信息查询结果为空，可能单号或提供的手机号码有误'
 
-    def extract_info(self, system_prompt:str, message:str, conditions:list=[]):
+    def invoke(self, args):
         """
-        通过语义理解提取快递查询信息
+        调用服务并返回信息
         """
-        try:
-            message = '输入:' + message + '。'
-            if len(conditions):
-                message += '\n已知信息:' + json.dumps(conditions, ensure_ascii=False)
-            reply = self.semantic_parse(system_prompt=system_prompt, content=message)
-            self.logger.info(reply)
-            # 提取 JSON
-            match = re.search(r'\[(.*)\]', reply, re.S)
-            # 未提取到 JSON 结构，放弃提取
-            if not match: return
-            json_array = match[0]
-            questions = json.loads(json_array)
-            results = []
-            for question in questions:
-                target_express = {
-                    'name': '',
-                    'code': '',
-                }
-                company_name = re.sub('快递|物流|速运|速递', '', question['company'])
-                for express in express_dict:
-                    if company_name in express['name']:
-                        target_express = express
-                        break
-                result = {
-                    'company_name': target_express['name'],
-                    'company_code': target_express['code'],
-                    'express_no': question.get('no'),
-                    'phone': question.get('phone'),
-                }
-                results.append(result)
-            return results
-        except Exception as e:
-            self.logger.error(e)
-            return
-
-    def test(self, message:str):
-        """
-        从 message 中尝试提取快递查询信息
-        如提取成功，返回 True 以及查询所需的信息，否则返回 False
-        """
-        if not re.search('快递|物流|速运|速递', message): return False, None
-        found = False
-        for express in express_dict:
-            if re.search(express['pattern'], message, re.I):
-                found = True
+        company_name = args.get('company', '').strip()
+        company_name = re.sub(r'快递|快运|物流|速递|速运', '', company_name)
+        company_code = ''
+        tracking_number = args.get('no', '')
+        phone = args.get('phone', '')
+        for express in EXPRESS_DICT:
+            if company_name in express['name']:
+                company_code = express['code']
                 break
-        # 没有匹配到快递单号，命中测试不通过
-        if not found: return False, None
-        results = self.extract_info(
-            system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"输入的快递单号，没有则为空","company":"快递公司","phone":"可选，输入的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
-            message=message,
-        )
-        if not results: return False, None
-        return len(results) > 0, results
+        if not company_code:
+            # 尝试用拼音作为公司代码
+            company_code = ''.join(pypinyin.lazy_pinyin(company_name))
+        query = {
+            'company_name': company_name,
+            'company_code': company_code,
+            'tracking_number': tracking_number,
+            'phone': phone,
+        }
+        express_info = self.__real_query(query)
+        return express_info
 
-    def invoke(self, data, **kwargs):
-        """
-        调用服务并返回信息，否则返回 None
-        """
-        state = kwargs['state']
-        stateful = False
-        stateful_message = []
-        if state:
-            extract_results = self.extract_info(
-                system_prompt='不要回答用户问题，只从问题提取信息并按 JSON 格式返回：[{"no":"可选，问题中出现的快递单号，没有则为空","company":"快递公司","phone":"可选，问题中出现的手机号或尾号，没有则为空"}...] 数组元素等于问题个数 不要加任何注释',
-                message='结合已知信息和以下信息（可能是快递公司名称或用户提供的手机尾号）查快递：' + data,
-                conditions=state,
-            )
-            if not extract_results: return 'System enquired express info: none'
-        else:
-            extract_results = data
-        results = []
-        for index, question in enumerate(extract_results):
-            if state:
-                for key in ['company_name', 'company_code', 'express_no', 'phone']:
-                    if not question[key]: question[key] = state[index][key]
-            express_info = self.__real_query(question)
-            # 需要提供进一步信息才能查询
-            if type(express_info) == dict:
-                stateful = True
-                stateful_message.append(express_info['message'])
-            else:
-                result = {
-                    'company_name': question['company_name'],
-                    'info': '\n'.join(express_info),
-                }
-                extract_results[index] = result
-                results.append(result)
-        if stateful:
-            stateful_result = {
-                'state': extract_results,
-                'message': ';'.join(stateful_message),
-            }
-            return stateful_result
-        return 'System enquired express info:' + json.dumps(results, ensure_ascii=False)
-
-express_dict = [
+EXPRESS_DICT = [
     {
         'code': 'zhaijisong',
         'name': '宅急送',
@@ -178,7 +100,17 @@ express_dict = [
     },
     {
         'code': 'shunfeng',
-        'name': '顺丰|顺风|顺峰',
+        'name': '顺丰',
+        'pattern': r'[A-Za-z0-9-]{4,35}'
+    },
+    {
+        'code': 'shunfeng',
+        'name': '顺风',
+        'pattern': r'[A-Za-z0-9-]{4,35}'
+    },
+    {
+        'code': 'shunfeng',
+        'name': '顺峰',
         'pattern': r'[A-Za-z0-9-]{4,35}'
     },
     {

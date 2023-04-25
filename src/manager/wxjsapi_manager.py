@@ -1,18 +1,23 @@
-from definition.var import APP_PARAM
-from helper.formatter import convert_encoding
-from logging import Logger
 import hashlib
 import json
 import random
 import requests
 import string
 import time
+from logging import getLogger, Logger
 
+from .key_token_manager import KeyTokenManager
+from definition.cls import Singleton
+from helper.formatter import convert_encoding
+
+key_token_mgr = KeyTokenManager()
 jsapi_ticket_info = {
     'ticket': '',
     'expire_time': 0,
 }
-class WxJsApiManager(object):
+APP_PARAM = key_token_mgr.get_app_param()
+
+class WxJsApiManager(metaclass=Singleton):
     """
     - 给前端 JSSDK 构造参数，并得到 nonceStr, timestamp, signature 的类，调用`signutareEncryption()`即可
     - signature生成需要以下几个参数：
@@ -34,7 +39,7 @@ class WxJsApiManager(object):
     """
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('WXJSAPIMGR')
         self.param_template = {
             'timestamp': self.__create_timestamp(),
             'nonceStr': self.__create_nonce_str(),
@@ -62,7 +67,7 @@ class WxJsApiManager(object):
             url = f'https://api.weixin.qq.com/sns/userinfo?access_token={access_token}&openid={openid}&lang=zh_CN'
             res = requests.get(url)
             body = convert_encoding(res.text)
-            data:dict = json.loads(body)
+            data: dict = json.loads(body)
             self.logger.info('获取微信用户信息成功，user_info=%s', data)
             return data
         except Exception as e:
@@ -80,7 +85,7 @@ class WxJsApiManager(object):
                     return self.token_info[code]['access_token']
             url = f"https://api.weixin.qq.com/sns/oauth2/access_token?appid={APP_PARAM['APPID']}&secret={APP_PARAM['APPSECRET']}&code={code}&grant_type=authorization_code"
             res = requests.get(url)
-            data:dict = res.json()
+            data: dict = res.json()
             self.logger.info(data)
             data['expires_at'] = int(time.time()) + int(data['expires_in'])
             self.token_info[code] = data
@@ -96,7 +101,7 @@ class WxJsApiManager(object):
             if not refresh_token: raise Exception('缺少 refresh_token')
             url = f"https://api.weixin.qq.com/sns/oauth2/refresh_token?appid={APP_PARAM['APPID']}&grant_type=refresh_token&refresh_token={refresh_token}"
             res = requests.get(url)
-            data:dict = res.json()
+            data: dict = res.json()
             data['expires_at'] = int(time.time()) + int(data['expires_in'])
             for key in data.keys():
                 self.token_info[code][key] = data[key]

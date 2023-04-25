@@ -2,7 +2,7 @@
 搜索引擎工具
 """
 from bs4 import BeautifulSoup
-from logging import Logger
+from logging import getLogger, Logger
 import requests.api as requests
 import web
 

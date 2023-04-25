@@ -1,8 +1,8 @@
 import datetime
 import web
 import json
-from .token_counter import count_string_tokens
-from definition.const import MODEL_TEXT_COMPLETION
+from .token_counter import count_message_tokens
+from definition.const import MODEL_CHAT
 from typing import List, Dict
 
 def convert_encoding(text = ''):
@@ -42,7 +42,7 @@ def make_message(role, content):
     """
     返回一条消息记录
     """
-    return {'role': role, 'content': content, '__token': count_string_tokens(content, MODEL_TEXT_COMPLETION)}
+    return {'role': role, 'content': content, '__token': count_message_tokens([{'role': role, 'content': content}], MODEL_CHAT)}
 
 def format_messages(messages: List[Dict[str, str]]):
     """

@@ -1,31 +1,23 @@
-from logging import Logger
-import json
-import re
 import requests.api as requests
 import web
+from logging import getLogger, Logger
 
-re_maths = re.compile((
-r'方程|等式|积分|微分|导数|'
-r'代数|向量|张量|矩阵|行列式|特征值|'
-r'化简|通分|约分|求导|求和|求解|'
-r'椭圆|圆锥|圆柱|圆台|曲线|抛物线|'
-r'极限|级数|阶乘|'
-r'\b(arc|a)?(sin|cos|tan|cot)\b|\b(exp|lg|log|pow|sqrt?)\b'))
-class WolframService:
+from definition.cls import Singleton
+
+class WolframService(metaclass=Singleton):
     semantic_parse: any
     logger: Logger = None
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
-        self.semantic_parse = kwargs['semantic_parse']
+        self.logger = getLogger("WOLFRAMSERVICE")
 
-    def __real_query(self, message):
+    def __real_query(self, input):
         """
         查询问题求解信息
         ip_list: IP 地址列表
         """
         try:
             results = {}
-            input = web.urlquote(message)
+            input = web.urlquote(input)
             res = requests.get(f'https://api.wolframalpha.com/v2/query?input={input}&appid=demo&format=image&output=json', timeout=60).json()
             pods = res.get('queryresult').get('pods')
             if not pods:
@@ -50,29 +42,18 @@ class WolframService:
                 results[pod_title] = aspect
             return results
         except Exception as e:
-            self.logger.error('查询问题求解信息失败：%s', e)
+            self.logger.error('查询问题求解信息失败：%s', str(e))
             return {}
 
-    def test(self, message:str):
+    def invoke(self, args):
         """
-        从 message 中尝试提取问题求解信息
-        如提取成功，返回 True 以及查询所需的信息，否则返回 False
+        调用服务并返回信息
         """
-        if re.search(re_maths, message):
-            return True, (message, 'math')
-        return False, None
-
-    def invoke(self, data, **kwargs):
-        """
-        调用服务并返回信息，否则返回 None
-        """
-        message, typename = data
-        message += '\nOutput:'
-        reply = self.semantic_parse(system_prompt='Do not answer the question. Translate input to English. Input:', content=message)
-        self.logger.info(reply)
-        result = self.__real_query(message=reply)
-        if len(result):
-            result = '请将以下 json 代码转换成 markdown 代码，开头：“以下是查询 Wolfram 得到的信息”.不要删除<```image>标记.对每一个<```image>标记前面的文字进行翻译.' + json.dumps(result, ensure_ascii=False)
-        else:
-            result = '没有查询到相关问题求解信息'
-        return result
+        questions = args['question']
+        if type(questions) == str: questions = [questions]
+        results = []
+        for question in questions:
+            result = self.__real_query(input=question)
+            results.append(f'{question}\n解答：{result}')
+        prompt = '根据以下 Wolfram 得到的信息详细回答，不要删除任何 ```image``` 标记\n'
+        return prompt + '\n'.join(results)
