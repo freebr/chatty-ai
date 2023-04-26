@@ -14,14 +14,16 @@ from websockets_routes import Router
 from definition.const import \
     CREDIT_TYPENAME_DICT,\
     DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
-    MAX_TOKEN_CONTEXT, MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG
+    MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG,\
+    TTS_ENGINE
 from definition.var import getWebsocketInstanceCount
 from helper.formatter import fail_json, make_message, success_json
-from manager import img2img_mgr, user_mgr
+from manager import img2img_mgr, user_mgr, voices_mgr
 from service.base import bot
 
 TIME_WAIT = 5
 MIN_PACKET_LENGTH = 1
+voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
 router = Router()
 class WebsocketController:
     servers: list
@@ -137,14 +139,8 @@ class WebsocketController:
                                 continue
                             # 处理文本/语音消息
                             self.logger.info('用户 %s 发送消息，长度：%d', openid, len(content))
-                            if content.startswith('图片'):
-                                content = content[2:]
-                                credit_typename = 'image'
-                            else:
-                                credit_typename = 'completion'
+                            credit_typename = 'completion'
                             match credit_typename:
-                                case 'image':
-                                    await self.process_txt2img(ws, openid, content)
                                 case 'completion':
                                     await self.process_chat(ws, openid, content)
                         # 进入图生图模式
@@ -215,34 +211,41 @@ class WebsocketController:
         user_message = make_message('user', prompt)
         token_prompt = user_message['__token']
         self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
-        if token_prompt > MAX_TOKEN_CONTEXT:
-            # 超出 token 数限制
-            reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
-            await self.send_as_role(ws, result='fail', role='system', content=reply)
-            return
-        user_mgr.add_message(openid, user_message)
+        # if token_prompt > MAX_TOKEN_CONTEXT:
+        #     # 超出 token 数限制
+        #     reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
+        #     self.send_message(openid, reply, send_as_text=True)
+        #     return
         user_mgr.set_pending(openid, True)
-        whole_message = ''
+        assistant_reply = ''
         try:
-            messages = user_mgr.clip_conversations(openid, MAX_TOKEN_CONTEXT - token_prompt)
+            voice_name = user_mgr.get_voice_name(openid)
+            if voice_name and voices_info[voice_name][-2] == 'en':
+                # 若选择的语音角色说英语，则给出用英语回答的提示
+                prompt += '\nPlease answer in English.'
             packet = ''
-            for message in bot.invoke_chat(user_mgr.users[openid], prompt, messages, True):
+            for message in bot.invoke_chat(user_mgr.users[openid], prompt, True):
                 # 系统消息，只记录不发送
-                content = message['content']
+                reply = message['content']
                 if message['role'] == 'system':
+                    if type(reply) == tuple and reply[0] == 'exceed-token-limit':
+                        # 超出 token 数限制
+                        raise Exception(RESPONSE_EXCEED_TOKEN_LIMIT % (reply[1], reply[2]))
+                    # 系统消息，只记录不发送
                     user_mgr.add_message(openid, message)
                     continue
-                if not content: raise Exception("接口调用失败")
-                packet += content
+                if not reply: raise ConnectionError()
+                reply = reply.strip('\n')
+                packet += reply
                 if len(packet) >= MIN_PACKET_LENGTH:
                     await self.send_as_role(ws, result='success', role='assistant', content=packet)
                     packet = ''
-                whole_message += content
+                assistant_reply += reply
             if packet:
                 await self.send_as_role(ws, result='success', role='assistant', content=packet)
                 packet = ''
             # 记录对话内容
-            user_mgr.add_message(openid, make_message('assistant', whole_message))
+            user_mgr.add_message(openid, make_message('assistant', assistant_reply))
             user_mgr.reduce_service_credit(openid, 'completion')
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
@@ -250,36 +253,10 @@ class WebsocketController:
             await self.check_remaining_credit(ws, openid, 'completion')
         except Exception as e:
             self.logger.error(e)
-            user_mgr.add_message(openid, make_message('assistant', whole_message))
-            reply = 'error-raised'
-            await self.send_as_role(ws, result='fail', role='system', content=reply)
-        user_mgr.set_pending(openid, False)
-
-    async def process_txt2img(self, ws, openid, prompt):
-        """
-        处理文生图消息
-        """
-        # 判断是否有剩余可用次数
-        if not await self.check_remaining_credit(ws, openid, 'image'): return
-        # 判断是否在等待回答
-        if user_mgr.get_pending(openid):
-            reply = 'wait-finish'
-            await self.send_as_role(ws, result='fail', role='system', content=reply)
-            return
-        self.logger.info('用户 %s 触发文生图指令', openid)
-        user_mgr.set_pending(openid, True)
-        try:
-            url = bot.invoke_image_creation(user_mgr.users[openid], prompt)
-            await self.send_as_role(ws, result='success', role='assistant', type='image', url=url)
-            # 记录对话内容
-            user_mgr.add_message(openid, make_message('assistant', '<image>' + url))
-            user_mgr.reduce_service_credit(openid, 'image')
-            # 检查剩余可用次数
-            await self.check_remaining_credit(ws, openid, 'image')
-        except Exception as e:
-            self.logger.error(e)
-            reply = 'error-raised'
-            await self.send_as_role(ws, result='success', role='system', content=reply)
+            if type(e) == ConnectionError:
+                reply = 'error-raised'
+                await self.send_as_role(ws, result='fail', role='system', content=reply)
+            if assistant_reply: user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
         user_mgr.set_pending(openid, False)
 
     async def process_img2img_request(self, ws, openid, **kwargs):

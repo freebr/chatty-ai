@@ -284,14 +284,8 @@ class APIController:
                         reply = f'✅收到您的已阅，谢谢支持！公众号持续更新功能中，即将推出小程序版本，对话体验更流畅，敬请期待~/爱心'
                         self.send_message(openid, reply, send_as_text=True)
                     return
-                # 处理生成图片消息
-                if '图片' in content:
-                    credit_typename = 'image'
-                else:
-                    credit_typename = 'completion'
+                credit_typename = 'completion'
                 match credit_typename:
-                    case 'image':
-                        self.process_txt2img(openid, content)
                     case 'completion':
                         self.process_chat(openid, content)
         return
