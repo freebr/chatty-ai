@@ -10,7 +10,7 @@ from configure import Config
 from definition.cls import Singleton
 from definition.const import DIR_USERS, CREDIT_TYPENAME_DICT, MAX_TOKEN_CONTEXT
 from definition.var import is_docker
-from helper.formatter import now
+from helper.formatter import get_feature_command_string, now
 from manager.feature_manager import FeatureManager
 
 KEY_USER_OPENID = 'USERS'
@@ -51,13 +51,15 @@ class UserManager(metaclass=Singleton):
         self.free_level = kwargs['free_level']
         self.highest_level = kwargs['highest_level']
         self.vip_dict = {level: [] for level in self.vip_levels}
+
+        self.feature_mgr = FeatureManager(logger=self.logger)
         self.default_credit = {}
         self.default_credit_vip = {level: {} for level in self.vip_levels}
         for type in CREDIT_TYPENAME_DICT:
-            self.default_credit[type] = kwargs['credit'][self.free_level][type]
+            feature = get_feature_command_string(type)
+            self.default_credit[type] = self.feature_mgr.get_total_feature_credit(self.free_level, feature)
             for level in self.vip_levels:
-                self.default_credit_vip[level][type] = kwargs['credit'][level][type]
-        self.feature_mgr = FeatureManager(logger=self.logger)
+                self.default_credit_vip[level][type] = self.feature_mgr.get_total_feature_credit(level, feature)
         self.init_db()
         self.load_vip_list()
         self.load_all_users()
@@ -91,16 +93,12 @@ class UserManager(metaclass=Singleton):
             'parent_id': None,
             'pending': False,
             'records': [],
-            'remaining_credit': {},
-            'service_state': {},
-            'total_credit': {},
             'voice_role': None,
             'ws': None,
             'wx_user_info': {},
         }
         for type in CREDIT_TYPENAME_DICT:
-            self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-            self.reset_remaining_service_credit(openid, type)
+            self.reset_feature_credit(openid, get_feature_command_string(type))
         self.dump_user(openid)
         return self.users[openid]
 
@@ -119,14 +117,11 @@ class UserManager(metaclass=Singleton):
                     'img2img_mode': False,
                     'parent_id': None,
                     'records': [],
-                    'service_state': {},
                 })
             if kwargs.get('reset_credits', False):
                 # 重置额度信息
-                level = self.get_vip_level(openid)
                 for type in CREDIT_TYPENAME_DICT:
-                    self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-                    self.reset_remaining_service_credit(openid, type)
+                    self.reset_feature_credit(openid, get_feature_command_string(type))
             if kwargs.get('reset_daily_data', False):
                 # 重置每日数据
                 updates['daily_data'] = self.get_initial_daily_data()
@@ -211,12 +206,12 @@ class UserManager(metaclass=Singleton):
         """
         if len(self.users) == 0: return True
         if openid == '*':
-            for openid in self.users: self.reset_user(openid, reset_conversation=True)
+            for openid in self.users: self.reset_user(openid, reset_conversation=True, reset_pending=True)
             self.logger.info('全部用户对话已清空')
         else:
             user = self.users.get(openid)
             if not user: return True
-            self.reset_user(openid, reset_conversation=True)
+            self.reset_user(openid, reset_conversation=True, reset_pending=True)
             self.logger.info('用户 %s 的对话已清空', openid)
         return True
 
@@ -269,67 +264,33 @@ class UserManager(metaclass=Singleton):
         self.users[openid]['voice_role'] = role
         self.dump_user(openid)
 
-    def reduce_service_credit(self, openid, type):
+    def set_remaining_feature_credit(self, openid, feature, value=0):
         """
-        使指定用户的指定类型的可用次数减一
-        """
-        if openid not in self.users: return False
-        if type not in CREDIT_TYPENAME_DICT: return False
-        if self.users[openid]['remaining_credit'][type] <= 0: return False
-        self.users[openid]['remaining_credit'][type] -= 1
-        self.dump_user(openid)
-        return True
-
-    def get_remaining_service_credit(self, openid, type):
-        """
-        获取指定用户的指定类型的剩余可用次数
-        """
-        if openid not in self.users:
-            level = self.get_vip_level(openid)
-            if level == self.free_level:
-                return self.default_credit[type]
-            return self.default_credit_vip[level][type]
-        if type not in CREDIT_TYPENAME_DICT: return 0
-        return self.users[openid]['remaining_credit'][type]
-
-    def set_remaining_service_credit(self, openid, type, value=0):
-        """
-        设置指定用户的指定类型的剩余可用次数
+        设置指定用户的指定特性的当日剩余可用次数
         """
         if openid not in self.users: return False
-        if type not in CREDIT_TYPENAME_DICT: return False
-        self.users[openid]['remaining_credit'][type] = value
-        self.dump_user(openid)
-        return True
-
-    def reset_remaining_service_credit(self, openid, type):
-        """
-        重置指定用户的指定类型的剩余可用次数为默认次数
-        """
-        if openid not in self.users: return False
-        if type not in CREDIT_TYPENAME_DICT: return False
         level = self.get_vip_level(openid)
-        self.users[openid]['remaining_credit'][type] = self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type]
+        total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        feature_info = {
+            'total': total_credit,
+            'remaining': value,
+        }
+        self.users[openid]['daily_data']['feature_credit'][feature] = feature_info
         self.dump_user(openid)
         return True
 
-    def get_total_service_credit(self, openid, type):
+    def reset_feature_credit(self, openid, feature):
         """
-        获取指定用户的指定类型的总可用次数
-        """
-        if openid not in self.users:
-            level = self.get_vip_level(openid)
-            return self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type]
-        if type not in CREDIT_TYPENAME_DICT: return 0
-        return self.users[openid]['total_credit'][type]
-
-    def set_total_service_credit(self, openid, type, value=0):
-        """
-        设置指定用户的指定类型的总可用次数
+        将指定用户的指定特性的当日可用次数重置为默认值
         """
         if openid not in self.users: return False
-        if type not in CREDIT_TYPENAME_DICT: return False
-        self.users[openid]['total_credit'][type] = value
+        level = self.get_vip_level(openid)
+        total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        feature_info = {
+            'total': total_credit,
+            'remaining': total_credit,
+        }
+        self.users[openid]['daily_data']['feature_credit'][feature] = feature_info
         self.dump_user(openid)
         return True
 
@@ -337,14 +298,16 @@ class UserManager(metaclass=Singleton):
         """
         获取指定用户的指定特性的总可用次数
         """
+        level = self.get_vip_level(openid)
         if openid not in self.users:
-            level = self.get_vip_level(openid)
             total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
         else:
             feature_info = self.users[openid]['daily_data']['feature_credit'].get(feature, {})
-            if not feature_info: return -1
-            total_credit = feature_info['total']
-        return total_credit
+            if feature_info:
+                total_credit = feature_info['total']
+            else:
+                total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
+        return int(total_credit)
 
     def get_remaining_feature_credit(self, openid, feature):
         """
@@ -359,7 +322,7 @@ class UserManager(metaclass=Singleton):
                 remaining_credit = feature_info['remaining']
             else:
                 remaining_credit = self.feature_mgr.get_total_feature_credit(level, feature)
-        return remaining_credit
+        return int(remaining_credit)
 
     def reduce_feature_credit(self, openid, feature):
         """
@@ -476,7 +439,7 @@ class UserManager(metaclass=Singleton):
 
     def get_vip_level(self, openid):
         openid = openid.strip()
-        if openid == '': return -1
+        if openid == '': return self.free_level
         for level, list in self.vip_dict.items():
             if openid in list:
                 return level
@@ -497,8 +460,7 @@ class UserManager(metaclass=Singleton):
         self.remove_vip(openid)
         self.vip_dict[level].append(openid)
         for type in CREDIT_TYPENAME_DICT:
-            self.set_total_service_credit(openid, type, self.default_credit[type] if level == self.free_level else self.default_credit_vip[level][type])
-            self.reset_remaining_service_credit(openid, type)
+            self.reset_feature_credit(openid, get_feature_command_string(type))
         self.save_vip_list()
         user = self.users.get(openid)
         if user: user['level'] = level
@@ -562,8 +524,8 @@ class UserManager(metaclass=Singleton):
         return self.users[openid]['login_time']
 
     def grant_credit(self, openid, credit_type, grant_credit):
-        remaining_credit = self.get_remaining_service_credit(openid, credit_type)
-        self.set_remaining_service_credit(openid, credit_type, remaining_credit + grant_credit)
+        remaining_credit = self.get_remaining_feature_credit(openid, get_feature_command_string(credit_type))
+        self.set_remaining_feature_credit(openid, get_feature_command_string(credit_type), remaining_credit + grant_credit)
         return True
 
     def get_login_user_list(self):

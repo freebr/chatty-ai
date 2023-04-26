@@ -52,3 +52,7 @@ def format_messages(messages: List[Dict[str, str]]):
 
 def now():
     return datetime.datetime.now().ctime()
+
+def get_feature_command_string(command: str):
+    if not command: return
+    return 'Commands.' + command

@@ -33,9 +33,9 @@ class FeatureManager(metaclass=Singleton):
         try:
             rules = eval(expr)
             if type(rules) == list:
-                return Infinity if level in rules else -1
+                return Infinity if level in rules else 0
             elif type(rules) == dict:
-                return rules.get(level) if level in rules else -1
+                return rules.get(level) if level in rules else 0
             else:
                 raise Exception('特性规则 %s 不存在' % feature)
         except Exception as e:

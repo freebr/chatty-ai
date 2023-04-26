@@ -37,24 +37,6 @@ user_mgr = UserManager(
         '可享受无限期500次体验额度（额度用完后，观看广告可自动获得新的500次额度）',
         '可享受无限次体验文字和图片生成服务，无需观看广告',
     ],
-    credit={
-        '青铜': {
-            'completion': 10,
-            'image': 10,
-        },
-        '白银': {
-            'completion': 100,
-            'image': 100,
-        },
-        '黄金': {
-            'completion': 500,
-            'image': 500,
-        },
-        '铂金': {
-            'completion': Infinity,
-            'image': Infinity,
-        },
-    },
 )
 user_mon = UserMonitor(
     user_mgr=user_mgr,

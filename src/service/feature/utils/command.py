@@ -1,7 +1,8 @@
 from logging import getLogger, Logger
 
-from manager.user_manager import UserManager
 from .search_google import google_search
+from helper.formatter import get_feature_command_string
+from manager.user_manager import UserManager
 
 user_mgr = UserManager()
 logger: Logger = getLogger('COMMANDEXECUTOR')
@@ -13,7 +14,8 @@ def execute_command(metadata: dict, user: dict, services: dict):
     command = metadata['name']
     args = metadata['args']
     logger.info('接收命令：%s %s', command, args)
-    if user_mgr.get_remaining_feature_credit(user['openid'], 'Commands.' + command) <= 0:
+    feature = get_feature_command_string(command)
+    if user_mgr.get_remaining_feature_credit(user['openid'], feature) <= 0:
         # 可用额度不足
         return command, 'no-credit'
     
@@ -53,5 +55,5 @@ def execute_command(metadata: dict, user: dict, services: dict):
             return command, None
         result = service.invoke(args)
     logger.info('执行命令：%s %s, 结果：%s', command, args, result)
-    user_mgr.reduce_feature_credit(user['openid'], 'Commands.' + command)
+    user_mgr.reduce_feature_credit(user['openid'], feature)
     return command, result

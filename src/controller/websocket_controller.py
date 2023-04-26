@@ -12,13 +12,13 @@ from time import time
 from websockets_routes import Router
 
 from definition.const import \
-    CREDIT_TYPENAME_DICT,\
+    COMMAND_COMPLETION, COMMAND_IMAGE, CREDIT_TYPENAME_DICT,\
     DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
     MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG,\
     TTS_ENGINE
 from definition.var import getWebsocketInstanceCount
-from helper.formatter import fail_json, make_message, success_json
-from manager import img2img_mgr, user_mgr, voices_mgr
+from helper.formatter import fail_json, get_feature_command_string, make_message, success_json
+from manager import autoreply_mgr, img2img_mgr, user_mgr, voices_mgr
 from service.base import bot
 
 TIME_WAIT = 5
@@ -139,9 +139,10 @@ class WebsocketController:
                                 continue
                             # 处理文本/语音消息
                             self.logger.info('用户 %s 发送消息，长度：%d', openid, len(content))
-                            credit_typename = 'completion'
+                            global COMMAND_COMPLETION
+                            credit_typename = COMMAND_COMPLETION
                             match credit_typename:
-                                case 'completion':
+                                case COMMAND_COMPLETION:
                                     await self.process_chat(ws, openid, content)
                         # 进入图生图模式
                         case 'msg.image':
@@ -202,7 +203,7 @@ class WebsocketController:
         处理文本消息
         """
         # 判断是否有剩余可用次数
-        if not await self.check_remaining_credit(ws, openid, 'completion'): return
+        if not await self.check_remaining_credit(ws, openid, COMMAND_COMPLETION): return
         # 判断是否在等待回答
         if user_mgr.get_pending(openid):
             reply = 'wait-finish'
@@ -246,11 +247,11 @@ class WebsocketController:
                 packet = ''
             # 记录对话内容
             user_mgr.add_message(openid, make_message('assistant', assistant_reply))
-            user_mgr.reduce_service_credit(openid, 'completion')
+            user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
             # 检查剩余可用次数
-            await self.check_remaining_credit(ws, openid, 'completion')
+            await self.check_remaining_credit(ws, openid, COMMAND_COMPLETION)
         except Exception as e:
             self.logger.error(e)
             if type(e) == ConnectionError:
@@ -285,7 +286,7 @@ class WebsocketController:
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
-            if not await self.check_remaining_credit(ws, openid, 'image'): return
+            if not await self.check_remaining_credit(ws, openid, COMMAND_IMAGE): return
             if not img2img_mgr.check_img2img_valid(openid): return
             if user_mgr.get_pending(openid):
                 reply = 'wait-finish'
@@ -296,29 +297,26 @@ class WebsocketController:
             for dest_name, dest_path in results:
                 img_url = path.join(URL_IMG2IMG_EXPORT, dest_name)
                 self.logger.info('图像 url：%s', img_url)
-                await self.send_as_role(ws, result='success', role='assistant', type='image', url=img_url)
-                user_mgr.reduce_service_credit(openid, 'image')
+                await self.send_as_role(ws, result='success', role='assistant', type=COMMAND_IMAGE, url=img_url)
+                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
             await self.send_as_role(ws, result='fail', role='system', content=reply)
         user_mgr.set_pending(openid, False)
-        if await self.check_remaining_credit(ws, openid, 'image'):
+        if await self.check_remaining_credit(ws, openid, COMMAND_IMAGE):
             style = img2img_mgr.get_user_image_info(openid)['style']
             reply = f'【系统提示】AI 已为您将图片转变为【{style}】的效果。如果想再画一张，请<a href=\'#\' data-message=\'{web.urlquote(prompt)}\'>点击这里</a>。<a href=\'#\' data-message=\'结束\'>返回对话模式</a>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
     
-    async def check_remaining_credit(self, ws, openid, credit_typename, wait_before_remind=True):
+    async def check_remaining_credit(self, ws, openid, credit_type, wait_before_remind=True):
         # 判断是否有剩余可用次数，如果用完则发出提示
-        if user_mgr.get_remaining_service_credit(openid, credit_typename) > 0: return True
-        reply = self.get_credit_used_up_reply(openid, credit_typename)
+        if user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type)) > 0: return True
+        reply = self.get_credit_used_up_reply(openid, credit_type)
         await self.send(ws, success_json(message={"role": "system", "content": reply}))
         return False
 
-    def get_credit_used_up_reply(self, openid, type='completion'):
-            total_credit = user_mgr.get_total_service_credit(openid, type)
-            grant_credit = int(total_credit / 2)
-            return f"""\
-❗【系统提示】您的 {total_credit} 次{CREDIT_TYPENAME_DICT[type]}使用额度已用完~
-ℹ️如果您觉得AI对您有帮助，还请点击下方分享按钮转发给朋友，对方点击进入后即分享成功，每成功一次可再奖励 {grant_credit} 次额度哦~感谢支持！\
-"""
+    def get_credit_used_up_reply(self, openid, credit_type):
+        total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
+        grant_credit = int(total_credit / 2)
+        return autoreply_mgr.get('NoCreditH5') % (total_credit, CREDIT_TYPENAME_DICT[credit_type], grant_credit)

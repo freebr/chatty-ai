@@ -65,9 +65,11 @@ SIGNUP_GRANT_CREDIT_SCALE = 0.5
 COUNT_RECENT_MESSAGES_TO_TAKE_IN = 9
 COUNT_RELEVANT_MEMORY_TO_TAKE_IN = 10
 
+COMMAND_COMPLETION = '文本生成'
+COMMAND_IMAGE = '非数学绘画'
 CREDIT_TYPENAME_DICT = {
-    'completion': '对话',
-    'image': '图片生成',
+    COMMAND_COMPLETION: '对话',
+    COMMAND_IMAGE: '图片生成',
 }
 URL_IMG2IMG_EXPORT = 'https://freebr.cn/oxf/img2img/'
 URL_POSTER_EXPORT = 'https://freebr.cn/oxf/poster/'

@@ -14,14 +14,14 @@ from crypt.WXBizMsgCrypt import WXBizMsgCrypt
 
 from definition.const import \
     BASE_ARTICLE_FILES, DEBUG_MODE,\
-    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT,\
+    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
     DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_DALLE, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
     SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
     RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
     MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
     URL_CLASH_SERVER, URL_PUSH_ARTICLE_COVER_IMAGE, URL_PUSH_LINK_COVER_IMAGE, URL_SITE_BASE, URL_WEIXIN_BASE
 from handler import code_handler
-from helper.formatter import convert_encoding, fail_json, get_query_string, make_message, success_json
+from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_query_string, make_message, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
 from manager import article_mgr, autoreply_mgr, chatgroup_mgr, key_token_mgr, img2img_mgr, payment_mgr, poster_mgr, user_mgr, voices_mgr, wxjsapi_mgr
 from numpy import Infinity
@@ -264,29 +264,30 @@ class APIController:
                 # 处理文本/语音消息
                 self.logger.info('用户 %s 发送消息，长度：%s', openid, len(content))
                 reply = None
+                global COMMAND_COMPLETION, COMMAND_IMAGE
                 if msg_data_id:
                     self.logger.info('用户 %s 消息 msg_data_id：%s', openid, msg_data_id)
                     type = None
-                    remaining_credit = user_mgr.get_remaining_service_credit(openid, 'completion')
+                    remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
                     if remaining_credit <= 0:
-                        type = 'completion'
-                        user_mgr.reset_remaining_service_credit(openid, 'completion')
-                    remaining_credit = user_mgr.get_remaining_service_credit(openid, 'image')
+                        type = COMMAND_COMPLETION
+                        user_mgr.reset_feature_credit(openid, get_feature_command_string(type))
+                    remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
                     if remaining_credit <= 0:
-                        type = 'image'
-                        user_mgr.reset_remaining_service_credit(openid, 'image')
+                        type = COMMAND_IMAGE
+                        user_mgr.reset_feature_credit(openid, get_feature_command_string(type))
                     if type:
-                        new_credit = user_mgr.get_remaining_service_credit(openid, type)
+                        new_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(type))
                         self.logger.info('%s 获得%s体验额度 %s 次', openid, type, new_credit)
                         reply = f'✅【系统提示】您已获得 {new_credit} 次{CREDIT_TYPENAME_DICT[type]}体验额度，快继续体验吧~/爱心'
                         self.send_message(openid, reply, send_as_text=True)
                     elif content.startswith('已阅'):
-                        reply = f'✅收到您的已阅，谢谢支持！公众号持续更新功能中，即将推出小程序版本，对话体验更流畅，敬请期待~/爱心'
+                        reply = f'✅收到您的已阅，谢谢支持！/爱心'
                         self.send_message(openid, reply, send_as_text=True)
                     return
-                credit_typename = 'completion'
+                credit_typename = COMMAND_COMPLETION
                 match credit_typename:
-                    case 'completion':
+                    case COMMAND_COMPLETION:
                         self.process_chat(openid, content)
         return
 
@@ -297,7 +298,7 @@ class APIController:
         match event_type:
             case 'subscribe' | 'SCAN':
                 self.logger.info('用户 %s 关注公众号', openid)
-                reply = autoreply_mgr.get('welcome')
+                reply = autoreply_mgr.get('Subscribe')
                 self.send_message(openid, reply, send_as_text=True)
                 file_path = BASE_ARTICLE_FILES['usage']
                 # 推文（玩法）
@@ -324,8 +325,8 @@ class APIController:
                     reply += f'，{user_mgr.vip_rights[level]}/鼓掌'
                 else:
                     for credit_type, credit_typename in CREDIT_TYPENAME_DICT.items():
-                        total_credit = user_mgr.get_total_service_credit(openid=openid, type=credit_type)
-                        remaining_credit = user_mgr.get_remaining_service_credit(openid=openid, type=credit_type)
+                        total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
+                        remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type))
                         reply += f'\n{credit_typename}赠送体验额度{total_credit}次，剩余体验额度{remaining_credit}次'
                 if level == user_mgr.free_level:
                     reply += '\n如果觉得我们的服务不错，就请作者喝杯咖啡吧！/咖啡'
@@ -346,7 +347,7 @@ class APIController:
         处理文本消息
         """
         # 判断是否有剩余可用次数
-        if not self.check_remaining_credit(openid, 'completion'): return
+        if not self.check_remaining_credit(openid, COMMAND_COMPLETION): return
         # 判断是否在等待回答
         reply = ''
         if user_mgr.get_pending(openid):
@@ -425,7 +426,7 @@ class APIController:
                         if not self.process_snippet(openid, reply): continue
                 # 记录对话内容
                 user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
-                user_mgr.reduce_service_credit(openid, 'completion')
+                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
                 self.set_typing(openid, False)
                 reply = None
             except Exception as e:
@@ -458,7 +459,7 @@ class APIController:
         """
         try:
             self.logger.info('用户 %s 发送消息触发文生图指令', openid)
-            if not self.check_remaining_credit(openid, 'image'): return
+            if not self.check_remaining_credit(openid, COMMAND_IMAGE): return
             # 判断是否在等待回答
             if user_mgr.get_pending(openid):
                 reply = '【系统提示】您说话太快了，喝一口水休息下~'
@@ -487,8 +488,8 @@ class APIController:
                 self.send_image(openid, media_id)
                 # 记录对话内容
                 user_mgr.add_message(openid, make_message('assistant', '<image>' + img_url))
-                user_mgr.reduce_service_credit(openid, 'image')
-                self.check_remaining_credit(openid, 'image')
+                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
+                self.check_remaining_credit(openid, COMMAND_IMAGE)
         except Exception as e:
             self.logger.error(e)
             if type(e) == ConnectionError: reply = RESPONSE_ERROR_RAISED
@@ -524,7 +525,7 @@ class APIController:
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
-            if not self.check_remaining_credit(openid, 'image'): return
+            if not self.check_remaining_credit(openid, COMMAND_IMAGE): return
             if not img2img_mgr.check_img2img_valid(openid): return
             if user_mgr.get_pending(openid):
                 reply = '【系统提示】您说话太快了，喝一口水休息下~'
@@ -543,14 +544,14 @@ class APIController:
                 if media_id:
                     self.logger.info('图像 media_id：%s', media_id)
                     self.send_image(openid, media_id)
-                    user_mgr.reduce_service_credit(openid, 'image')
+                    user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
         except Exception as e:
             self.logger.error(e)
             reply = RESPONSE_ERROR_RAISED
             self.send_message(openid, reply, send_as_text=True)
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
-        if self.check_remaining_credit(openid, 'image'):
+        if self.check_remaining_credit(openid, COMMAND_IMAGE):
             style = img2img_mgr.get_user_image_info(openid)['style']
             reply = f'已为您将图片转变为【{style}】的效果。如果想让我再画一张，请<a href=\'weixin://bizmsgmenu?msgmenucontent={web.urlquote(prompt)}&msgmenuid=0\'>点击这里</a>。<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>返回对话模式</a>'
             self.send_message(openid, reply, send_as_text=True)
@@ -575,25 +576,19 @@ class APIController:
                 reply = f'【系统提示】现在是语音对话模式，AI将语音回复消息，要以文字回复，在菜单中再次选择该角色即可（或发送“结束”）。\n当前角色：{new_name}'
         self.send_message(openid, reply, send_as_text=True)
 
-    def check_remaining_credit(self, openid, credit_typename, wait_before_remind=True):
+    def check_remaining_credit(self, openid, credit_type, wait_before_remind=True):
         # 判断是否有剩余可用次数，如果用完则发出提示
-        if user_mgr.get_remaining_service_credit(openid, credit_typename) > 0: return True
-        reply = self.get_credit_used_up_reply(openid, credit_typename)
+        if user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type)) > 0: return True
+        reply = self.get_credit_used_up_reply(openid, credit_type)
         if wait_before_remind: time.sleep(5)
         self.send_message(openid, reply, send_as_text=True)
-        article_url = article_mgr.shuffle_get_url()
+        article_url = article_mgr.shuffle_get_url('ad')
         self.push_article_by_url(openid, article_url)
         return False
 
-    def get_credit_used_up_reply(self, openid, type='completion'):
-        total_credit = user_mgr.get_total_service_credit(openid, type)
-        return f"""\
-❗【系统提示】您的 {total_credit} 次{CREDIT_TYPENAME_DICT[type]}体验额度已用完~
-ℹ️觉得AI有帮助，<a href=\'weixin://bizmsgmenu?msgmenucontent=【打赏作者】&msgmenuid=0\'>就点这里扫码</a>，请作者喝杯咖啡吧~
-ℹ️想要更多体验额度，只需点击下面推送的文章
-ℹ️在文章页面滑到最底端，点“发消息”（手机版微信可见）
-ℹ️回复任意消息即可~感谢支持\
-"""
+    def get_credit_used_up_reply(self, openid, credit_type):
+        total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
+        return autoreply_mgr.get('NoCreditWechat') % (total_credit, CREDIT_TYPENAME_DICT[credit_type])
 
     def payment_success_callback(self, openid, out_trade_no, amount):
         amount /= 100
@@ -632,13 +627,13 @@ class APIController:
             self.send_message(openid, message, send_as_text=True)
         return True
     
-    def set_remaining_service_credit(self, openid, credit_type):
+    def set_remaining_feature_credit(self, openid, credit_type):
         """
         设置指定用户、指定类型的可用次数
         """
         if len(openid) == 0: openid = '*'
         credit_value = get_query_string()
-        return fail_json() if not user_mgr.set_remaining_service_credit(openid, credit_type, credit_value) else success_json()
+        return fail_json() if not user_mgr.set_remaining_feature_credit(openid, get_feature_command_string(credit_type), credit_value) else success_json()
 
     def dump_user_info(self):
         """
@@ -670,9 +665,9 @@ class APIController:
         total_credit = {}
         remaining_credit = {}
         for credit_type in CREDIT_TYPENAME_DICT:
-            total_credit[credit_type] = user_mgr.get_total_service_credit(openid, credit_type)
+            total_credit[credit_type] = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
             if total_credit[credit_type] == Infinity: total_credit[credit_type] = 'infinity'
-            remaining_credit[credit_type] = user_mgr.get_remaining_service_credit(openid, credit_type)
+            remaining_credit[credit_type] = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type))
             if remaining_credit[credit_type] == Infinity: remaining_credit[credit_type] = 'infinity'
         return success_json(
             openid=openid,
@@ -714,7 +709,7 @@ class APIController:
             return fail_json(message='您今日已签到')
         user_mgr.set_signup(openid, True)
         for credit_type in CREDIT_TYPENAME_DICT:
-            total_credit = user_mgr.get_total_service_credit(openid, credit_type)
+            total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
             grant_credit = int(total_credit * SIGNUP_GRANT_CREDIT_SCALE)
             user_mgr.grant_credit(openid, credit_type, grant_credit)
         self.logger.info('用户 %s 签到成功', openid)
@@ -1285,7 +1280,7 @@ class APIController:
                         user_mgr.set_day_share_count(openid_invitor, day_share_count + 1)
                         user_mgr.add_invited_user(openid_invitor, openid_login)
                         for credit_type in CREDIT_TYPENAME_DICT:
-                            total_credit = user_mgr.get_total_service_credit(openid_invitor, credit_type)
+                            total_credit = user_mgr.get_total_feature_credit(openid_invitor, get_feature_command_string(credit_type))
                             grant_credit = int(total_credit * SHARE_GRANT_CREDIT_SCALE)
                             granted = user_mgr.grant_credit(openid_invitor, credit_type, grant_credit)
                     if granted:
@@ -1464,7 +1459,7 @@ class APIController:
             case ['user', openid]:
                 return self.get_user_info(openid=openid)
             case ['user', openid, 'credit', credit_type, 'set']:
-                return self.set_remaining_service_credit(openid=openid, credit_type=credit_type)
+                return self.set_remaining_feature_credit(openid=openid, credit_type=credit_type)
             case ['user', openid, 'conversation', 'clear']:
                 return self.clear_conversation(openid=openid)
             case ['user', openid, 'pending', 'clear']:
