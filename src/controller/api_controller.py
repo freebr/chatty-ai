@@ -247,7 +247,11 @@ class APIController:
                         #     self.send_message(openid, '\n'.join(reply), send_as_text=True)
                         #     return
                         self.logger.info('用户 %s 输入提示：%s', openid, content)
-                        style = info.get('style', 'MJ风格')
+                        style = info.get('style')
+                        if not style:
+                            style = 'MJ风格'
+                        else:
+                            style = style.replace('风格', '')
                         info['prompt'] = info.get('prompt', '').replace(style, '')
                         info['negative_prompts'] = info.get('negative_prompts', '').replace(style, '')
                         img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'])
@@ -499,7 +503,7 @@ class APIController:
     
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（一次只能上传一张图片转换哦）：']
+        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
         reply += img2img_mgr.get_style_list()
         reply += ['想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
         reply += ['要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']

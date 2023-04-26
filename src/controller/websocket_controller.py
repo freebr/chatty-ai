@@ -127,7 +127,11 @@ class WebsocketController:
                                     #     await self.send_as_role(ws, result='success', role='system', content='\n'.join(reply))
                                     #     continue
                                     self.logger.info('用户 %s 输入提示：%s', openid, content)
-                                    style = info.get('style', 'MJ风格')
+                                    style = info.get('style')
+                                    if not style:
+                                        style = 'MJ风格'
+                                    else:
+                                        style = style.replace('风格', '')
                                     info['prompt'] = info.get('prompt', '').replace(style, '')
                                     info['negative_prompts'] = info.get('negative_prompts', '').replace(style, '')
                                     img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'])
@@ -262,7 +266,7 @@ class WebsocketController:
 
     async def process_img2img_request(self, ws, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（一次只能上传一张图片转换哦）：']
+        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
         reply += img2img_mgr.get_style_list(type='web')
         reply += ['想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
         reply += ['要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
@@ -297,7 +301,7 @@ class WebsocketController:
             for dest_name, dest_path in results:
                 img_url = path.join(URL_IMG2IMG_EXPORT, dest_name)
                 self.logger.info('图像 url：%s', img_url)
-                await self.send_as_role(ws, result='success', role='assistant', type=COMMAND_IMAGE, url=img_url)
+                await self.send_as_role(ws, result='success', role='assistant', type='image', url=img_url)
                 user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
         except Exception as e:
             self.logger.error(e)

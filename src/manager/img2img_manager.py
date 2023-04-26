@@ -11,6 +11,7 @@ from definition.const import DIR_IMAGES_IMG2IMG
 from manager.key_token_manager import KeyTokenManager
 
 URL_API_BASE = 'https://flagopen.baai.ac.cn/flagStudio'
+DISPLAY_STYLE_COUNT_WECHAT = 20
 key_token_mgr = KeyTokenManager()
 class Img2ImgManager(metaclass=Singleton):
     api_keys: list
@@ -125,6 +126,7 @@ class Img2ImgManager(metaclass=Singleton):
                 # 4.图生图
                 param_data = {
                     'filename': upload_info.get('filename'),
+                    'controlnet_task': 'pose-from-image',
                 }
                 for key, default_value in self.DEFAULT_PARAMS.items():
                     param_data[key] = params.get(key, user.get(key, default_value))
@@ -182,7 +184,7 @@ class Img2ImgManager(metaclass=Singleton):
             # show_text = '{} {}人次使用'.format(style, info['used_count'])
             counter += 1
             if type == 'wechat':
-                line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={web.urlquote(style)}&msgmenuid=0\'>{style}</a>'
+                line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={style}&msgmenuid=0\'>{style}</a>'
             elif type == 'web':
                 line += f'<a href=\'#\' data-message=\'{web.urlquote(style)}\'>{style}</a>'
             if counter % 3 == 0:
@@ -190,6 +192,7 @@ class Img2ImgManager(metaclass=Singleton):
                 line = ''
             else:
                 line += ' / '
+            if counter == DISPLAY_STYLE_COUNT_WECHAT and type == 'wechat': break
         return ret
 
     def get_prompt_examples(self):

@@ -74,11 +74,11 @@ CREDIT_TYPENAME_DICT = {
 URL_IMG2IMG_EXPORT = 'https://freebr.cn/oxf/img2img/'
 URL_POSTER_EXPORT = 'https://freebr.cn/oxf/poster/'
 SYSTEM_PROMPT_IMG2IMG = """\
-从input提取信息并按 JSON 格式返回：\
-{"style":"keywords about the style of image",\
-"prompt":"keywords that weight is positive(weight) (default weight is 1, separated by space)",\
-"negative_prompts":"keywords that weight is negative(weight) (default weight is 1, separated by space)"}\
-不要加任何注释。input:"""
+根据下面的描述生成以下 JSON:\
+{"style":"style keyword(in Chinese)",\
+"prompt":"given keywords that is good(separated by comma)",\
+"negative_prompts":"given keywords that is not good(separated by comma)"}\
+不要加任何注释。描述如下"""
 
 RESPONSE_NO_DEBUG_CODE = '啊哦~代码长翅膀飞走了~'
 MESSAGE_UPGRADE_FREE_LEVEL = '感谢您的赞赏，我们会继续为您提供更好的服务！'
