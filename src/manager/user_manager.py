@@ -4,6 +4,7 @@ import time
 import uuid
 from base64 import b64decode
 from logging import getLogger, Logger
+from numpy import Infinity
 from os import path
 
 from configure import Config
@@ -52,7 +53,7 @@ class UserManager(metaclass=Singleton):
         self.highest_level = kwargs['highest_level']
         self.vip_dict = {level: [] for level in self.vip_levels}
 
-        self.feature_mgr = FeatureManager(logger=self.logger)
+        self.feature_mgr = FeatureManager()
         self.default_credit = {}
         self.default_credit_vip = {level: {} for level in self.vip_levels}
         for type in CREDIT_TYPENAME_DICT:
@@ -307,7 +308,7 @@ class UserManager(metaclass=Singleton):
                 total_credit = feature_info['total']
             else:
                 total_credit = self.feature_mgr.get_total_feature_credit(level, feature)
-        return int(total_credit)
+        return Infinity if total_credit == Infinity else int(total_credit)
 
     def get_remaining_feature_credit(self, openid, feature):
         """
@@ -322,7 +323,7 @@ class UserManager(metaclass=Singleton):
                 remaining_credit = feature_info['remaining']
             else:
                 remaining_credit = self.feature_mgr.get_total_feature_credit(level, feature)
-        return int(remaining_credit)
+        return Infinity if remaining_credit == Infinity else int(remaining_credit)
 
     def reduce_feature_credit(self, openid, feature):
         """

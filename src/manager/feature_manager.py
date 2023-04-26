@@ -10,7 +10,7 @@ class FeatureManager(metaclass=Singleton):
     logger: Logger = None
 
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger('FEATUREMGR')
         self.load()
 
     def load(self):
@@ -35,7 +35,8 @@ class FeatureManager(metaclass=Singleton):
             if type(rules) == list:
                 return Infinity if level in rules else 0
             elif type(rules) == dict:
-                return rules.get(level) if level in rules else 0
+                credit = rules.get(level) if level in rules else 0
+                return Infinity if credit == 'Infinity' else credit
             else:
                 raise Exception('特性规则 %s 不存在' % feature)
         except Exception as e:
