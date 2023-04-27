@@ -266,9 +266,13 @@ class WebsocketController:
 
     async def process_img2img_request(self, ws, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
+        reply = ['【系统提示】', '现在是图生图模式，请按以下步骤完成：']
+        reply += ['1️⃣请选择预处理方式：']
+        reply += img2img_mgr.get_controlnet_task_list(type='web')
+        reply += ['2️⃣请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
         reply += img2img_mgr.get_style_list(type='web')
-        reply += ['想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
+        reply += ['3️⃣请在输入框继续输入您希望生成的内容，或者<a href=\'#\' data-message=\'@random_prompt(img2img)\'>点击这里</a>随机生成一个提示']
+        reply += ['3️想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
         reply += ['要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
         filename = kwargs.get('filename')
         prompt = kwargs.get('prompt')

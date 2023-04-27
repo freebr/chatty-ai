@@ -173,6 +173,26 @@ class Img2ImgManager(metaclass=Singleton):
         if querystring: querystring = '&' + querystring
         return f'{URL_API_BASE}/{name}?apikey={self.api_keys[0]}{querystring}'
 
+    def get_controlnet_task_list(self, type='wechat'):
+        """
+        获取预处理器列表字符串
+        """
+        counter = 0
+        ret = []
+        line = ''
+        for name, desc in CONTROLNET_TASK_LIST.items():
+            counter += 1
+            if type == 'wechat':
+                line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={name}&msgmenuid=0\'>{name}</a>'
+            elif type == 'web':
+                line += f'<a href=\'#\' data-message=\'@append-prompt({web.urlquote(name)})\'>{desc}</a>'
+            if counter % 3 == 0:
+                ret.append(line)
+                line = ''
+            else:
+                line += ' / '
+        return ret
+
     def get_style_list(self, type='wechat'):
         """
         获取风格列表字符串
@@ -307,3 +327,14 @@ STYLE_LIST = [
     # '库沙特',
     # '雷诺阿',
 ]
+
+CONTROLNET_TASK_LIST = {
+    'depth-from-image': '基于深度检测引导，使出图保持与原图一致的纵深关系',
+    'canny-from-image': '基于 Canny 边缘检测引导，能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
+    'hed-from-image': '基于 HED 边缘检测引导，更好保留柔和边缘细节，适合重新着色和风格化',
+    'mlsd-from-image': '基于线段识别引导，适合出建筑设计效果图',
+    'normal-from-image': '基于法线贴图引导，光影处理效果好，适合CG、游戏美术设计',
+    'pose-from-image': '基于人物骨骼姿势引导，适合人物形象转换',
+    'scribble-from-image': '基于涂鸦标注引导，可由简笔画生成效果图',
+    'seg-from-image': '基于图像语义分割引导，可由一系列色块生成效果图',
+}
