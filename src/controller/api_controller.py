@@ -339,7 +339,7 @@ class APIController:
                 self.send_message(openid, reply, send_as_text=True)
                 self.logger.info('用户 %s 点击菜单“我的等级”', openid)
             case 'see-ad':
-                article_url = article_mgr.shuffle_get_url()
+                article_url = article_mgr.shuffle_get_url('ad')
                 self.push_article_by_url(openid, article_url)
                 self.logger.info('用户 %s 点击菜单“看点”', openid)
             case _:
