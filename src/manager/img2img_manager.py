@@ -20,6 +20,7 @@ class Img2ImgManager(metaclass=Singleton):
     style_dict: dict
     logger: Logger = None
     DEFAULT_PARAMS = {
+        'controlnet_task': 'canny-from-image',
         'style': None,
         'prompt': None,
         'negative_prompts': None,
@@ -61,7 +62,7 @@ class Img2ImgManager(metaclass=Singleton):
         if name not in self.users: self.register_user(name)
         img_path = kwargs.get('img_path')
         if img_path: self.users[name]['img_path'].append(img_path)
-        for key in ['prompt', 'style']:
+        for key in ['controlnet_task', 'negative_prompts', 'prompt', 'style']:
             value = kwargs.get(key)
             self.users[name][key] = value
         return True
@@ -89,6 +90,8 @@ class Img2ImgManager(metaclass=Singleton):
         if not src_path: return False
         style = self.users[name].get('style')
         if not style: return False
+        controlnet_task = self.users[name].get('controlnet_task')
+        if not controlnet_task: return False
         return True
 
     def img2img(self, username, params={}):
@@ -126,7 +129,6 @@ class Img2ImgManager(metaclass=Singleton):
                 # 4.图生图
                 param_data = {
                     'filename': upload_info.get('filename'),
-                    'controlnet_task': 'pose-from-image',
                 }
                 for key, default_value in self.DEFAULT_PARAMS.items():
                     param_data[key] = params.get(key, user.get(key, default_value))
@@ -183,14 +185,10 @@ class Img2ImgManager(metaclass=Singleton):
         for name, desc in CONTROLNET_TASK_LIST.items():
             counter += 1
             if type == 'wechat':
-                line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={name}&msgmenuid=0\'>{name}</a>'
+                line = f'<a href=\'weixin://bizmsgmenu?msgmenucontent={name}&msgmenuid=0\'>{desc}</a>'
             elif type == 'web':
-                line += f'<a href=\'#\' data-message=\'@append-prompt({web.urlquote(name)})\'>{desc}</a>'
-            if counter % 3 == 0:
-                ret.append(line)
-                line = ''
-            else:
-                line += ' / '
+                line = f'<a href=\'#\' data-message=\'@append-prompt:预处理器[{web.urlquote(name)}]\'>{desc}</a>'
+            ret.append(line)
         return ret
 
     def get_style_list(self, type='wechat'):
@@ -206,7 +204,7 @@ class Img2ImgManager(metaclass=Singleton):
             if type == 'wechat':
                 line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={style}&msgmenuid=0\'>{style}</a>'
             elif type == 'web':
-                line += f'<a href=\'#\' data-message=\'{web.urlquote(style)}\'>{style}</a>'
+                line += f'<a href=\'#\' data-message=\'@append-prompt:风格[{web.urlquote(style)}]\'>{style}</a>'
             if counter % 3 == 0:
                 ret.append(line)
                 line = ''
@@ -268,73 +266,73 @@ STYLE_LIST = [
     '工业霓虹',
     '电影艺术',
     '史诗大片',
-    # '特写',
-    # '儿童画',
-    # '油画',
-    # '水彩画',
-    # '卡通画',
-    # '浮世绘',
-    # '赛博朋克',
-    # '吉卜力',
-    # '哑光',
-    # '现代中式',
-    # '相机',
-    # '霓虹游戏',
-    # '蒸汽波',
-    # '宝可梦',
-    # '火影忍者',
-    # '圣诞老人',
-    # '个人特效',
-    # '通用漫画',
-    # 'Momoko',
-    # '齐白石',
-    # '张大千',
-    # '丰子恺',
-    # '梵高',
-    # '塞尚',
-    # '莫奈',
-    # '马克·夏加尔',
-    # '丢勒',
-    # '高更',
-    # '爱德华·蒙克',
-    # '托马斯·科尔',
-    # '安迪·霍尔',
-    # '倪传婧',
-    # '村上隆',
-    # '黄光剑',
-    # '吴冠中',
-    # '林风眠',
-    # '木内达朗',
-    # '萨雷尔',
-    # '杜拉克',
-    # '比利宾',
-    # '布拉德利',
-    # '普罗旺森',
-    # '莫比乌斯',
-    # '格里斯利',
-    # '比普',
-    # '卡尔·西松',
-    # '玛丽·布莱尔',
-    # '埃里克·卡尔',
-    # '扎哈·哈迪德',
-    # '包豪斯',
-    # '英格尔斯',
-    # 'RHADS',
-    # '阿泰·盖兰',
-    # '俊西',
-    # '坎皮恩',
-    # '德尚鲍尔',
-    # '库沙特',
-    # '雷诺阿',
+    '特写',
+    '儿童画',
+    '油画',
+    '水彩画',
+    '卡通画',
+    '浮世绘',
+    '赛博朋克',
+    '吉卜力',
+    '哑光',
+    '现代中式',
+    '相机',
+    '霓虹游戏',
+    '蒸汽波',
+    '宝可梦',
+    '火影忍者',
+    '圣诞老人',
+    '个人特效',
+    '通用漫画',
+    'Momoko',
+    '齐白石',
+    '张大千',
+    '丰子恺',
+    '梵高',
+    '塞尚',
+    '莫奈',
+    '马克·夏加尔',
+    '丢勒',
+    '高更',
+    '爱德华·蒙克',
+    '托马斯·科尔',
+    '安迪·霍尔',
+    '倪传婧',
+    '村上隆',
+    '黄光剑',
+    '吴冠中',
+    '林风眠',
+    '木内达朗',
+    '萨雷尔',
+    '杜拉克',
+    '比利宾',
+    '布拉德利',
+    '普罗旺森',
+    '莫比乌斯',
+    '格里斯利',
+    '比普',
+    '卡尔·西松',
+    '玛丽·布莱尔',
+    '埃里克·卡尔',
+    '扎哈·哈迪德',
+    '包豪斯',
+    '英格尔斯',
+    'RHADS',
+    '阿泰·盖兰',
+    '俊西',
+    '坎皮恩',
+    '德尚鲍尔',
+    '库沙特',
+    '雷诺阿',
 ]
 
 CONTROLNET_TASK_LIST = {
-    'depth-from-image': '基于深度检测引导，使出图保持与原图一致的纵深关系',
-    'canny-from-image': '基于 Canny 边缘检测引导，能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
-    'hed-from-image': '基于 HED 边缘检测引导，更好保留柔和边缘细节，适合重新着色和风格化',
-    'mlsd-from-image': '基于线段识别引导，适合出建筑设计效果图',
-    'normal-from-image': '基于法线贴图引导，光影处理效果好，适合CG、游戏美术设计',
-    'pose-from-image': '基于人物骨骼姿势引导，适合人物形象转换',
-    'scribble-from-image': '基于涂鸦标注引导，可由简笔画生成效果图',
-    'seg-from-image': '基于图像语义分割引导，可由一系列色块生成效果图',
+    'canny-from-image': 'Canny：能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
+    'depth-from-image': '深度检测：可使出图保持与原图一致的纵深关系',
+    'hed-from-image': 'HED：更好保留柔和边缘细节，适合重新着色和风格化',
+    'mlsd-from-image': 'MLSD：适合出建筑设计效果图',
+    'normal-from-image': '法线贴图：光影处理效果好，适合CG、游戏美术设计',
+    'pose-from-image': '骨骼姿势：适合人物形象转换',
+    'scribble-from-image': '涂鸦标注：可由简笔画生成效果图',
+    'seg-from-image': '语义分割：可由一系列色块生成效果图',
 }

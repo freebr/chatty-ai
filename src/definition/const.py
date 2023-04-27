@@ -76,6 +76,7 @@ URL_POSTER_EXPORT = 'https://freebr.cn/oxf/poster/'
 SYSTEM_PROMPT_IMG2IMG = """\
 根据下面的描述生成以下 JSON:\
 {"style":"style keyword(in Chinese)",\
+"preprocessor":"given preprocessor",\
 "prompt":"given keywords that is good(separated by comma)",\
 "negative_prompts":"given keywords that is not good(separated by comma)"}\
 不要加任何注释。描述如下"""

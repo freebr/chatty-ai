@@ -503,10 +503,14 @@ class APIController:
     
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】', '现在是图生图模式，请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
+        reply = ['【系统提示】欢迎体验以图生图！完成以下 3 个步骤即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
+        reply += ['1️⃣请选择图片预处理方式：']
+        reply += ['❇️' + task for task in img2img_mgr.get_controlnet_task_list()]
+        reply += ['2️⃣请选择您想要转换成的风格：']
         reply += img2img_mgr.get_style_list()
-        reply += ['想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
-        reply += ['要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']
+        reply += ['3️⃣请在输入框继续输入您希望生成的内容！']
+        reply += ['❓想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
+        reply += ['ℹ️要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']
         img_url = kwargs.get('img_url')
         src_path = None
         prompt = kwargs.get('prompt')

@@ -134,7 +134,7 @@ class WebsocketController:
                                         style = style.replace('风格', '')
                                     info['prompt'] = info.get('prompt', '').replace(style, '')
                                     info['negative_prompts'] = info.get('negative_prompts', '').replace(style, '')
-                                    img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'])
+                                    img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'], controlnet_task=info['preprocessor'])
                                     await self.process_img2img(ws, openid, prompt=content)
                                 except Exception as e:
                                     self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
@@ -266,14 +266,14 @@ class WebsocketController:
 
     async def process_img2img_request(self, ws, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】', '现在是图生图模式，请按以下步骤完成：']
-        reply += ['1️⃣请选择预处理方式：']
-        reply += img2img_mgr.get_controlnet_task_list(type='web')
-        reply += ['2️⃣请选择您想要转换成的画风（每成功转换 1 次将消耗 1 个图片生成额度）：']
+        reply = ['【系统提示】欢迎体验以图生图！完成以下 3 个步骤即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
+        reply += ['1️⃣请选择图片预处理方式：']
+        reply += ['❇️' + task for task in img2img_mgr.get_controlnet_task_list(type='web')]
+        reply += ['2️⃣请选择您想要转换成的风格：']
         reply += img2img_mgr.get_style_list(type='web')
-        reply += ['3️⃣请在输入框继续输入您希望生成的内容，或者<a href=\'#\' data-message=\'@random_prompt(img2img)\'>点击这里</a>随机生成一个提示']
-        reply += ['3️想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
-        reply += ['要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
+        reply += ['3️⃣请在输入框继续输入您希望生成的内容，或者<a href=\'#\' data-message=\'@append-prompt:$img2img-prompt\'>点击这里</a>随机生成一个提示']
+        reply += ['❓想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
+        reply += ['ℹ️要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
         filename = kwargs.get('filename')
         prompt = kwargs.get('prompt')
         style = kwargs.get('style')

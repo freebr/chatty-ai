@@ -328,6 +328,9 @@ class BotService(metaclass=Singleton):
                                 if command_result == 'no-credit':
                                     post_prompts.append(make_message('user', f"""Please translate this into Chinese: Sorry, but your 额度 is not enough, so the command "{command_name}" cannot be executed to get the answer to your question. Please consider upgrade your level to gain more 额度."""))
                                     break
+                                elif command_result == 'not-supported':
+                                    self.logger.warn('调用了不支持的命令：%s', command_name)
+                                    continue
                                 post_prompts.append(make_message('system', """\
     Consider if system has provided information to help you answer the above question, if yes, start answer like:根据我的查询...<give some warmly suggestion>(do not include command JSON)"""))
                             else:

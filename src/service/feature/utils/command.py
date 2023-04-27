@@ -11,8 +11,8 @@ def execute_command(metadata: dict, user: dict, services: dict):
     """
     执行输入的命令
     """
-    command = metadata['name']
-    args = metadata['args']
+    command = metadata.get('name')
+    args = metadata.get('args')
     logger.info('接收命令：%s %s', command, args)
     feature = get_feature_command_string(command)
     if user_mgr.get_remaining_feature_credit(user['openid'], feature) <= 0:
@@ -23,7 +23,7 @@ def execute_command(metadata: dict, user: dict, services: dict):
     result = ''
     match command:
         case '搜索':
-            result = google_search(args["input"])
+            service_name = 'SearchService'
         case '浏览网站':
             service_name = 'BrowseService'
             args['get_links'] = True
@@ -48,7 +48,11 @@ def execute_command(metadata: dict, user: dict, services: dict):
             service_name = 'WolframService'
         case '非数学绘画':
             service_name = 'ImageService'
-    if service_name:
+        case _:
+            return command, 'not-supported'
+    if service_name == 'SearchService':
+        result = google_search(args["input"])
+    else:
         service = services.get(service_name)
         if not service:
             logger.info('服务未注册：%s', service_name)
