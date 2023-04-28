@@ -1,4 +1,5 @@
 import openai
+import re
 import time
 import traceback
 import uuid
@@ -16,7 +17,7 @@ from definition.cls import Singleton
 from definition.const import \
     DIR_CONFIG, COUNT_RECENT_MESSAGES_TO_TAKE_IN, COUNT_RELEVANT_MEMORY_TO_TAKE_IN,\
     MODEL_CHAT, MODEL_MODERATION, MODEL_TEXT_COMPLETION,\
-    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY
+    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY, REGEXP_SORRY
 from handler.message_handler import MessageHandler
 from helper.formatter import format_messages, make_message
 from helper.token_counter import count_message_tokens, count_string_tokens
@@ -296,7 +297,7 @@ class BotService(metaclass=Singleton):
                 # 保存对话到记忆
                 memory_to_add = f"用户输入:{user_input}"\
                     f"\n回复:{assistant_reply}"
-                self.memory.add(memory_to_add)
+                self.save_to_memory(memory_to_add)
             elif assistant_reply:
                 self.logger.info(assistant_reply)
                 cmds = parse_json(assistant_reply)
@@ -307,7 +308,7 @@ class BotService(metaclass=Singleton):
                     answer = True
                     memory_to_add = f"用户输入:{user_input}"\
                         f"\n回复:{assistant_reply}"
-                    self.memory.add(memory_to_add)
+                    self.save_to_memory(memory_to_add)
                     break
                 else:
                     if type(cmds) == dict: cmds = [cmds]
@@ -342,7 +343,7 @@ class BotService(metaclass=Singleton):
                                 f"\n结果:{command_result}"
                             system_message = f'系统查询到以下信息有助于回答用户问题.\n{command_name}结果:{command_result}'
                             user_mgr.add_message(user['openid'], make_message('system', system_message))
-                            self.memory.add(memory_to_add)
+                            self.save_to_memory(memory_to_add)
             else:
                 # 输入和输出 token 数超出限制
                 break
@@ -563,3 +564,7 @@ class BotService(metaclass=Singleton):
             self.logger.error('设置 Chat 模型参数失败：', str(e))
             return False
         return True
+
+    def save_to_memory(self, content: str):
+        if re.search(REGEXP_SORRY, content, re.I): return
+        self.memory.add(content)

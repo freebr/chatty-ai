@@ -71,6 +71,7 @@ class ExpressService(metaclass=Singleton):
         company_code = ''
         tracking_number = args.get('no', '')
         phone = args.get('phone', '')
+        phone = re.sub(r'^\d', '', phone)
         for express in EXPRESS_DICT:
             if company_name in express['name']:
                 company_code = express['code']
