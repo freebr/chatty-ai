@@ -1,6 +1,4 @@
 import _thread
-from logging import getLogger
-from numpy import Infinity
 
 from definition.const import DIR_IMAGES_QRCODE
 from .article_manager import ArticleManager
@@ -15,28 +13,19 @@ from .voices_manager import VoicesManager
 from .wx_access_token_manager import WxAccessTokenManager
 from .wxjsapi_manager import WxJsApiManager
 
+from configure import Config
 from monitor.user_monitor import UserMonitor
 
+cfg = Config()
 key_token_mgr = KeyTokenManager()
 img2img_mgr = Img2ImgManager()
 user_mgr = UserManager(
-    vip_levels=[
-        '白银',
-        '黄金',
-        '铂金',
-    ],
-    free_level='青铜',
-    highest_level='铂金',
-    vip_prices=[
-        4.9,
-        19.9,
-        49.9,
-    ],
-    vip_rights=[
-        '可享受无限期100次体验额度（额度用完后，观看广告可自动获得新的100次额度）',
-        '可享受无限期500次体验额度（额度用完后，观看广告可自动获得新的500次额度）',
-        '可享受无限次体验文字和图片生成服务，无需观看广告',
-    ],
+    free_level=cfg.data.levels.get('FreeLevel'),
+    top_level=cfg.data.levels.get('TopLevel'),
+    vip_levels=[ level_name for level_name, level_info in cfg.data.levels.get('Definition').items() if level_info.get('Vip', False) ],
+    vip_prices=[ level_info.get('Price') for level_info in cfg.data.levels.get('Definition').values() if level_info.get('Vip', False) ],
+    vip_purchasable=[ level_info.get('Purchasable', True) for level_info in cfg.data.levels.get('Definition').values() if level_info.get('Vip', False) ],
+    vip_rights=[ level_info.get('Rights') for level_info in cfg.data.levels.get('Definition').values() if level_info.get('Vip', False) ],
 )
 user_mon = UserMonitor(
     user_mgr=user_mgr,

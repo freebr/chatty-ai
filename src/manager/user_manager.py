@@ -24,18 +24,20 @@ class UserManager(metaclass=Singleton):
     default_credit: dict
     default_credit_vip: dict
     feature_mgr: FeatureManager
-    # VIP 等级
+    # VIP 用户等级名称
     vip_levels: list
-    # VIP 价格
+    # VIP 用户等级价格
     vip_prices: dict
-    # VIP 权益描述
+    # VIP 用户等级权益
     vip_rights: dict
+    # VIP 用户等级可购买性
+    vip_purchasable: dict
     # VIP 用户 ID
     vip_dict: dict
-    # 普通用户称谓
+    # 免费用户等级名称
     free_level: str
-    # 最高 VIP 用户称谓
-    highest_level: str
+    # 最高可充值用户等级名称
+    top_level: str
     # VIP 用户记录文件
     vip_file_path = path.join(DIR_USERS, 'vip-list.json')
     logger: Logger = None
@@ -45,12 +47,14 @@ class UserManager(metaclass=Singleton):
         self.users = {}
         self.vip_levels = kwargs['vip_levels']
         self.vip_prices = {}
+        self.vip_purchasable = {}
         self.vip_rights = {}
         for index, level in enumerate(self.vip_levels):
             self.vip_prices[level] = kwargs['vip_prices'][index]
+            self.vip_purchasable[level] = kwargs['vip_purchasable'][index]
             self.vip_rights[level] = kwargs['vip_rights'][index]
         self.free_level = kwargs['free_level']
-        self.highest_level = kwargs['highest_level']
+        self.top_level = kwargs['top_level']
         self.vip_dict = {level: [] for level in self.vip_levels}
 
         self.feature_mgr = FeatureManager()
@@ -364,7 +368,7 @@ class UserManager(metaclass=Singleton):
         获取指定用户的 Websocket 实例
         """
         if openid not in self.users: return
-        return self.users[openid]['ws']
+        return self.users[openid].get('ws')
 
     def set_ws(self, openid, ws):
         """
@@ -506,17 +510,19 @@ class UserManager(metaclass=Singleton):
         if key not in self.users[openid]['code_list']: return
         return self.users[openid]['code_list'].get(key)
 
-    def get_level_rights_by_amount(self, amount:float):
+    def get_level_rights_by_amount(self, amount: float):
         """
         获取指定充值金额对应的等级和权益描述
         """
         level_result = None
         rights = None
+        last_price = 0
         for level in self.vip_levels:
-            if amount >= self.vip_prices[level]:
+            if not self.vip_purchasable.get(level): continue
+            if amount >= self.vip_prices[level] and last_price < self.vip_prices[level]:
                 level_result = level
+                last_price = self.vip_prices[level]
                 rights = self.vip_rights[level]
-        if not rights: level_result = self.free_level
         return level_result, rights
 
     def get_login_time(self, openid):

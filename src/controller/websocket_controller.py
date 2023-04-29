@@ -14,7 +14,7 @@ from websockets_routes import Router
 from definition.const import \
     COMMAND_COMPLETION, COMMAND_IMAGE, CREDIT_TYPENAME_DICT,\
     DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
-    MAX_UPLOAD_IMAGES, RESPONSE_EXCEED_TOKEN_LIMIT, SYSTEM_PROMPT_IMG2IMG,\
+    MAX_UPLOAD_IMAGES, SYSTEM_PROMPT_IMG2IMG,\
     TTS_ENGINE
 from definition.var import getWebsocketInstanceCount
 from helper.formatter import fail_json, get_feature_command_string, make_message, success_json
@@ -218,7 +218,7 @@ class WebsocketController:
         self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
         # if token_prompt > MAX_TOKEN_CONTEXT:
         #     # 超出 token 数限制
-        #     reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
+        #     reply = autoreply_mgr.get('ExceedTokenLimit') % (token_prompt, MAX_TOKEN_CONTEXT)
         #     self.send_message(openid, reply, send_as_text=True)
         #     return
         user_mgr.set_pending(openid, True)
@@ -235,7 +235,7 @@ class WebsocketController:
                 if message['role'] == 'system':
                     if type(reply) == tuple and reply[0] == 'exceed-token-limit':
                         # 超出 token 数限制
-                        raise Exception(RESPONSE_EXCEED_TOKEN_LIMIT % (reply[1], reply[2]))
+                        raise Exception(autoreply_mgr.get('ExceedTokenLimit') % (reply[1], reply[2]))
                     # 系统消息，只记录不发送
                     user_mgr.add_message(openid, message)
                     continue

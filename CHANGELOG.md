@@ -2,7 +2,7 @@
 ## ⚠️以下仅列出主要更新记录，未列出全部 commit
 |日期|版本|主要更新|
 |----|---|-------|
-|2023.4.29|0.1.0|`WeatherService`改用极速API接口
+|2023.4.29|0.1.0|`WeatherService`改用极速API接口；将用户等级定义放入 `config.yaml`；用户支付金额时，自动计算总共支付过的金额来确定用户应升级到的等级
 |2023.4.27|0.1.0|允许用户指定以图生图功能使用的预处理器（`controlnet_task`）
 |2023.4.26|0.1.0|重构 `BotService` 中的 `invoke_chat`，采用类似 `AutoGPT` 的思路实现多种任务自动完成（包括搜索、总结网页、查询实时信息等）；使用 `FeatureManager` 存取用户额度使用数据；将全部的配置文件整合到 `config.yaml`
 |2023.4.21|0.1.0|文本生成时，取历史消息中 token 数不超过 `MAX_TOKEN_CONTEXT` 的消息作为上下文；重构 `ArticleManager`，对应配置文件改为 `articles.yml` 存放推文 URL 和 media id

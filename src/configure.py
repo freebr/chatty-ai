@@ -15,6 +15,7 @@ class ConfigData:
     chatgroups: Dict[str, any] = field(default_factory=dict)
     databases: Dict[str, dict] = field(default_factory=dict)
     features: Dict[str, any] = field(default_factory=dict)
+    levels: Dict[str, any] = field(default_factory=dict)
     wxpay: Dict[str, str] = field(default_factory=dict)
 
 CONFIG_MAPPING = {
@@ -25,6 +26,7 @@ CONFIG_MAPPING = {
     'Chatgroups': 'chatgroups',
     'Databases': 'databases',
     'Features': 'features',
+    'Levels': 'levels',
     'WxPay': 'wxpay',
 }
 

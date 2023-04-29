@@ -25,6 +25,9 @@ APIKeys:
   Clash: <Clash API 密钥>
 
 Articles:
+  cover:
+    ad: <此处输入广告推文消息封面 URL>
+    snippet: <此处输入代码片段调试中转消息封面 URL>
   media_id:
     upgrade: <此处输入升级额度链接 URL>
     usage: <此处输入玩法功能介绍 URL>
@@ -35,8 +38,17 @@ Articles:
       - <广告推文 URL 3>
 
 Autoreplies:
-  Subscribe: |
-    <此处输入公众号被关注时的自动回复，支持多行>
+  # 以下属性值均支持多行填写
+  DonateTip: '<此处输入用户点击“赞赏作者”按钮后的自动回复>'
+  DonateSuccess: '<此处输入用户赞赏成功时的自动回复>'
+  ErrorRaised: '<此处输入接口发生错误时的自动回复>'
+  ExceedTokenLimit: '<此处输入用户输入消息超出 token 数量限制时的自动回复>'
+  NoCreditH5: '<此处输入H5网页版中用户额度不足时的自动回复>'
+  NoCreditWechat: '<此处输入公众号中用户额度不足时的自动回复>'
+  SnippetNotExisted: '<此处输入代码片段调试中转链接失效时的自动回复>'
+  Subscribe: '<此处输入公众号被关注时的自动回复>'
+  UpgradeFailed: '<此处输入用户等级升级失败时的自动回复>'
+  UpgradeVipLevel: '<此处输入用户支付金额达到特定等级升级条件时的自动回复>'
 
 Chatgroups:
   QRCodes:
@@ -46,44 +58,74 @@ Chatgroups:
 
 Databases:
   Redis:
-    Host: <Redis 服务器主机名或地址>
-    Port: <Redis 服务器端口号>
+    # 开发环境下的 Redis 配置
+    Development:
+      Host: <Redis 服务器主机名或地址>
+      Port: <Redis 服务器端口号>
+    # 生产环境下的 Redis 配置
+    Production:
+      Host: <Redis 服务器主机名或地址>
+      Port: <Redis 服务器端口号>
+    IndexName: <Redis 数据库索引名称>
     Password: <Redis 服务器登录密码 base64 值>
-  <其他数据库配置>:
-    Host: <其他数据库服务器主机名或地址>
-    Port: <其他数据库服务器端口号>
-    Password: <其他数据库登录密码 base64 值>
 
 Features:
   Commands:
-      google:
+      搜索:
         <等级名称>: <每日可用额度>
-      browse_website:
+      浏览网站:
         <等级名称>: <每日可用额度>
-      get_text_summary:
+      总结网页:
         <等级名称>: <每日可用额度>
-      generate_image:
+      非数学绘画:
         <等级名称>: <每日可用额度>
-      exchange_rate:
+      查询汇率:
         <等级名称>: <每日可用额度>
-      delivery:
+      查询快递:
         <等级名称>: <每日可用额度>
-      ip:
+      查询IP:
         <等级名称>: <每日可用额度>
-      joke:
+      查询笑话:
         <等级名称>: <每日可用额度>
-      movie:
+      查询电影:
         <等级名称>: <每日可用额度>
-      phone:
+      查询电话:
         <等级名称>: <每日可用额度>
-      weather:
+      查询天气:
         <等级名称>: <每日可用额度>
-      maths:
+      数学图像:
+        <等级名称>: <每日可用额度>
+      数学问题:
+        <等级名称>: <每日可用额度>
+      文本生成:
         <等级名称>: <每日可用额度>
   Memory:
     - <等级名称1>
     - <等级名称2>
     - <等级名称3>
+
+Levels:
+  FreeLevel: <免费用户等级名称>
+  TopLevel: <最高可充值用户等级名称>
+  Definition:
+    <免费用户等级名称>:
+      Price: 0
+      Rights: <免费用户等级权益>
+    <等级名称1>:
+      Price: <等级名称1价格>
+      Rights: <等级名称1等级权益>
+      # 充值用户等级需设置 Vip 为 true
+      Vip: true
+    <等级名称2>:
+      Price: <等级名称2价格>
+      Rights: <等级名称2等级权益>
+      Vip: true
+    <等级名称3>:
+      Price: <等级名称3价格>
+      Rights: <等级名称3等级权益>
+      Vip: true
+      # 不可充值用户等级需设置 Purchasable 为 false
+      Purchasable: false
 
 WxPay:
   APIV3_KEY: <API v3 密钥，详见 https://pay.weixin.qq.com/wiki/doc/apiv3/wechatpay/wechatpay3_2.shtml>

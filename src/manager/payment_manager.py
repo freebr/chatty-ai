@@ -1,9 +1,9 @@
 from .qrcode_manager import QRCodeManager
 from configure import Config
 from definition.cls import Singleton
-from definition.const import DIR_CERT_WXPAY, DIR_IMAGES_TEMPLATE, DIR_USERS
+from definition.const import DIR_CERT_WXPAY, DIR_IMAGES_TEMPLATE, DIR_USERS, URL_API
 from logging import getLogger, Logger
-from os import environ, mkdir, path
+from os import mkdir, path
 from PIL import Image
 from wechatpayv3 import WeChatPay, WeChatPayType
 import inspect
@@ -20,7 +20,7 @@ with open(path.abspath(path.join(DIR_CERT_WXPAY, 'key/apiclient_key.pem'))) as f
     PRIVATE_KEY = f.read()
 
 # 回调地址，也可以在调用接口的时候覆盖
-NOTIFY_URL = environ['URL_SITE_BASE'] + '/pay/notify'
+NOTIFY_URL = path.join(URL_API, 'pay/notify')
 
 # 微信支付平台证书缓存目录，减少证书下载调用次数，首次使用确保此目录为空目录.
 # 初始调试时可不设置，调试通过后再设置
@@ -162,7 +162,7 @@ class PaymentManager(metaclass=Singleton):
         """
         处理支付通知
         """
-        self.logger.info('收到支付信息：%s', web.data())
+        self.logger.info('收到微信支付回调通知：%s', web.data())
         headers = web.ctx.env
         new_headers = {}
         new_headers.update({'Wechatpay-Signature': headers.get('HTTP_WECHATPAY_SIGNATURE')})
@@ -183,13 +183,13 @@ class PaymentManager(metaclass=Singleton):
             attach = res.get('attach')
             success_time = res.get('success_time')
             payer = res.get('payer')
-            amount = res.get('amount').get('total')
+            pay_amount = res.get('amount').get('total')
             # 根据返回参数进行必要的业务处理，处理完后返回200或204
-            self.logger.info('收到微信支付回调通知，用户：%s，订单号：%s，金额：¥%s，交易状态：%s',
-                payer, out_trade_no, amount / 100, trade_state_desc,
+            self.logger.info('微信支付回调通知信息：用户：%s，订单号：%s，金额：¥%s，交易状态：%s',
+                payer, out_trade_no, pay_amount / 100, trade_state_desc,
             )
             if inspect.ismethod(self.payment_success_callback):
-                if self.payment_success_callback(openid=payer.get('openid'), out_trade_no=out_trade_no, amount=amount):
+                if self.payment_success_callback(openid=payer.get('openid'), out_trade_no=out_trade_no, pay_amount=pay_amount):
                     return {'code': 'SUCCESS', 'message': '成功'}
                 else:
                     return {'code': 'FAIL', 'message': '失败'}
@@ -281,25 +281,29 @@ class PaymentManager(metaclass=Singleton):
         headimgurl = kwargs['headimgurl']
         pay_level = kwargs['pay_level']
         before_level = kwargs['before_level']
+        # 支付金额，单位为分
+        pay_amount = int(kwargs['pay_amount'])
         pay_time = kwargs['pay_time']
         out_trade_no = kwargs['out_trade_no']
         pay_list[out_trade_no] = {
             'BeforeLevel': before_level,
+            'PayAmount': pay_amount,
             'PayLevel': pay_level,
             'PayTime': pay_time,
             'OutTradeNo': out_trade_no,
             'UserId': openid,
         }
-        stat_level = stat_list[pay_level]
-        if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
-        stat_level['Count'] += 1
-        last_buy = stat_level['LastBuy']
-        if len(last_buy) >= 5: last_buy.pop(0)
-        last_buy.append({
-            'User': openid,
-            'HeadImgUrl': headimgurl,
-            'PayTime': pay_time,
-        })
+        if pay_level:
+            stat_level = stat_list.get(pay_level)
+            if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
+            stat_level['Count'] += 1
+            last_buy = stat_level['LastBuy']
+            if len(last_buy) >= 5: last_buy.pop(0)
+            last_buy.append({
+                'User': openid,
+                'HeadImgUrl': headimgurl,
+                'PayTime': pay_time,
+            })
         self.pay_info['PayList'] = pay_list
         self.save_pay_info()
         self.logger.info('用户 %s 的支付信息已记录', openid)
@@ -334,11 +338,12 @@ class PaymentManager(metaclass=Singleton):
         if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
         openid = refund_pay_info['UserId']
         refund_time = kwargs['refund_time']
-        refund_amount = kwargs['refund_amount']
+        # 退款金额，单位为分
+        refund_amount = int(kwargs['refund_amount'])
         refund_memo = kwargs['refund_memo']
         refund_pay_info['Refund'] = {
             'Time': refund_time,
-            'Amount': refund_amount,
+            'RefundAmount': refund_amount,
             'Memo': refund_memo,
         }
         stat_level['Count'] -= 1
@@ -360,3 +365,10 @@ class PaymentManager(metaclass=Singleton):
         """
         pay_info = self.pay_info.get('PayList', {}).get(out_trade_no)
         return pay_info
+
+    def get_paid_amount_by_openid(self, openid):
+        """
+        查询给定的 openid 已支付成功且无退回的金额（单位为分）
+        """
+        pay_amounts = [info['PayAmount'] for info in self.pay_info.get('PayList', {}).values() if info['UserId'] == openid ]
+        return sum(pay_amounts)

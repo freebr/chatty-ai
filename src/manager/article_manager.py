@@ -7,6 +7,7 @@ cfg = Config()
 class ArticleManager(metaclass=Singleton):
     article_media_ids: dict
     article_urls: dict
+    cover_urls: dict
     logger: Logger = None
     def __init__(self, **kwargs):
         self.logger = getLogger('ARTICLEMGR')
@@ -17,13 +18,15 @@ class ArticleManager(metaclass=Singleton):
         加载推文信息字典
         """
         try:
+            self.cover_urls = cfg.data.articles.get('cover', {})
             self.article_urls = cfg.data.articles.get('url', {})
             self.article_media_ids = cfg.data.articles.get('media_id', {})
             cfg.data.articles = {
+                'cover': self.cover_urls,
                 'url': self.article_urls,
                 'media_id': self.article_media_ids,
             }
-            self.logger.info('推文信息加载成功，URL 数量：%d，media id 数量：%d', len(self.article_urls), len(self.article_media_ids))
+            self.logger.info('推文信息加载成功，封面数量：%d，URL 数量：%d，media id 数量：%d', len(self.cover_urls), len(self.article_urls), len(self.article_media_ids))
             return True
         except Exception as e:
             self.logger.error('推文信息加载失败：%s', str(e))
@@ -86,3 +89,10 @@ class ArticleManager(metaclass=Singleton):
         urls = self.article_urls.get(type, [])
         index = int(random() * len(urls))
         return urls[index]
+
+    def get_cover_url(self, type: str):
+        """
+        返回指定类型的封面 URL 并返回
+        """
+        url = self.cover_urls.get(type)
+        return url

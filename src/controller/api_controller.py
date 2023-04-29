@@ -12,15 +12,12 @@ import xmltodict
 from asyncio import new_event_loop, set_event_loop, get_event_loop
 from crypt.WXBizMsgCrypt import WXBizMsgCrypt
 
-from configure import Config
 from definition.const import \
     DEBUG_MODE,\
     MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
     DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
     SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
-    RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
-    MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
-    URL_CLASH_SERVER, URL_PUSH_ARTICLE_COVER_IMAGE, URL_PUSH_LINK_COVER_IMAGE, URL_SITE_BASE, URL_WEIXIN_BASE
+    URL_CLASH_SERVER, URL_DEFAULT_USER, URL_API, URL_WEIXIN_BASE
 from handler import code_handler
 from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_query_string, make_message, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
@@ -34,7 +31,6 @@ DONATE_PRICE = 0.01
 # 发出耐心等待提示的等待时间 10s
 WAIT_TIMEOUT = 10
 voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
-cfg = Config()
 class APIController:
     logger = None
     def __init__(self, **kwargs):
@@ -51,7 +47,7 @@ class APIController:
         """
         初始化菜单
         """
-        media_id = cfg.data.articles.get('media_id', {}).get('upgrade')
+        media_id = article_mgr.get_media_id('upgrade')
         # 创建菜单
         url = self.wx_api_url('menu/create')
         ret = requests.post(
@@ -257,8 +253,7 @@ class APIController:
                         self.process_img2img(openid, prompt=content)
                     except Exception as e:
                         self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
-                        reply = RESPONSE_ERROR_RAISED
-                        self.send_message(openid, reply, send_as_text=True)
+                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
                     return
                 if content == '【打赏作者】':
                     self.process_donate_request(openid)
@@ -303,7 +298,7 @@ class APIController:
                 self.logger.info('用户 %s 关注公众号', openid)
                 reply = autoreply_mgr.get('Subscribe')
                 self.send_message(openid, reply, send_as_text=True)
-                media_id = cfg.data.articles.get('media_id', {}).get('usage')
+                media_id = article_mgr.get_media_id('usage')
                 self.push_article_by_id(openid, media_id)
                 reply = '您好，请问有什么需要我解答的问题吗？/可爱'
                 self.send_message(openid, reply, send_as_text=True)
@@ -322,7 +317,7 @@ class APIController:
             case 'show-level':
                 level = user_mgr.get_vip_level(openid)
                 reply = f'【系统提示】您目前的体验等级为【{level}】'
-                if level == user_mgr.highest_level:
+                if level == user_mgr.top_level:
                     reply += f'，{user_mgr.vip_rights[level]}/鼓掌'
                 else:
                     for credit_type, credit_typename in CREDIT_TYPENAME_DICT.items():
@@ -359,7 +354,7 @@ class APIController:
             self.logger.info('用户 %s 消息 token=%d', openid, token_prompt)
             # if token_prompt > MAX_TOKEN_CONTEXT:
             #     # 超出 token 数限制
-            #     reply = RESPONSE_EXCEED_TOKEN_LIMIT % (token_prompt, MAX_TOKEN_CONTEXT)
+            #     reply = autoreply_mgr.get('ExceedTokenLimit') % (token_prompt, MAX_TOKEN_CONTEXT)
             #     self.send_message(openid, reply, send_as_text=True)
             #     return
             user_mgr.set_pending(openid, True)
@@ -380,7 +375,7 @@ class APIController:
                     if message['role'] == 'system':
                         if type(reply) == tuple and reply[0] == 'exceed-token-limit':
                             # 超出 token 数限制
-                            raise Exception(RESPONSE_EXCEED_TOKEN_LIMIT % (reply[1], reply[2]))
+                            raise Exception(autoreply_mgr.get('ExceedTokenLimit') % (reply[1], reply[2]))
                         # 系统消息，只记录不发送
                         user_mgr.add_message(openid, message)
                         continue
@@ -432,7 +427,7 @@ class APIController:
                 reply = None
             except Exception as e:
                 self.logger.error(e)
-                if type(e) == ConnectionError: reply = RESPONSE_ERROR_RAISED
+                if type(e) == ConnectionError: reply = autoreply_mgr.get('ErrorRaised')
                 reply_result['is_respond'] = True
                 if assistant_reply: user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
             user_mgr.set_pending(openid, False)
@@ -451,7 +446,7 @@ class APIController:
         title = '点我调试代码吧'
         description = '叮！您要的代码已生成，请点击这里调试~'
         url = self.debug_api_url(openid, key)
-        self.push_link(openid, title, description, url)
+        self.push_link(openid, title, description, url, article_mgr.get_cover_url('snippet'))
         return True
         
     def process_img2img_request(self, openid, **kwargs):
@@ -508,8 +503,7 @@ class APIController:
                     user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
         except Exception as e:
             self.logger.error(e)
-            reply = RESPONSE_ERROR_RAISED
-            self.send_message(openid, reply, send_as_text=True)
+            self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
         if self.check_remaining_credit(openid, COMMAND_IMAGE):
@@ -551,40 +545,53 @@ class APIController:
         total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
         return autoreply_mgr.get('NoCreditWechat') % (total_credit, CREDIT_TYPENAME_DICT[credit_type])
 
-    def payment_success_callback(self, openid, out_trade_no, amount):
-        amount /= 100
-        self.logger.info('用户 %s 订单 %s 支付金额 %s 元', openid, out_trade_no, amount)
-        level_upgrade, rights = user_mgr.get_level_rights_by_amount(amount)
-        # 检查之前是否已支付
+    def payment_success_callback(self, openid, out_trade_no, pay_amount):
+        self.logger.info('用户 %s 订单 %s 支付金额 %s 元', openid, out_trade_no, pay_amount / 100)
+        paid_amount = payment_mgr.get_paid_amount_by_openid(openid)
+        if paid_amount: self.logger.info('用户 %s 先前已支付金额 %s 元', openid, paid_amount / 100)
+        total_amount = paid_amount + pay_amount
+        self.logger.info('用户 %s 合计支付金额 %s 元', openid, total_amount / 100)
+        level_upgrade, rights = user_mgr.get_level_rights_by_amount(total_amount / 100)
+        # 检查此订单之前是否已处理
         pay_info = payment_mgr.get_pay_info_by_out_trade_no(out_trade_no)
-        self.logger.info(pay_info)
         if pay_info and pay_info['OutTradeNo'] == out_trade_no:
+            self.logger.info('先前记录支付信息：%s', pay_info)
             self.logger.warn('收到订单 %s 支付通知，但此订单已处理', out_trade_no)
             return True
-        headimgurl = user_mgr.get_wx_user_info(openid)['headimgurl']
+        wx_user_info: dict = user_mgr.get_wx_user_info(openid)
+        if not wx_user_info:
+            headimgurl = URL_DEFAULT_USER
+        else:
+            headimgurl = wx_user_info.get('headimgurl', URL_DEFAULT_USER)
         # 记录支付信息
-        payment_mgr.add_pay_info(openid=openid, headimgurl=headimgurl,
-            pay_level=level_upgrade, before_level=user_mgr.get_vip_level(openid), pay_time=time.ctime(),
+        payment_mgr.add_pay_info(openid=openid,
+            before_level=user_mgr.get_vip_level(openid),
+            headimgurl=headimgurl,
             out_trade_no=out_trade_no,
+            pay_amount=pay_amount, pay_level=level_upgrade, pay_time=time.ctime(),
         )
-        if level_upgrade == user_mgr.free_level:
-            message = MESSAGE_UPGRADE_FREE_LEVEL
+        if (not level_upgrade) or level_upgrade == user_mgr.get_vip_level(openid):
+            message = autoreply_mgr.get('DonateSuccess')
         else:
             # 升级用户等级
             success = user_mgr.add_vip(openid, level_upgrade)
             if success:
                 self.logger.info('用户 %s 等级升级为【%s】', openid, level_upgrade)
-                message = MESSAGE_UPGRADE_VIP_LEVEL % (level_upgrade, rights)
+                message = autoreply_mgr.get('UpgradeVipLevel') % (level_upgrade, rights)
             else:
                 self.logger.error('用户 %s 等级未能升级为【%s】，该等级不存在', openid, level_upgrade)
-                message = MESSAGE_UPGRADE_FAILED
+                message = autoreply_mgr.get('UpgradeFailed')
         ws = user_mgr.get_ws(openid)
         if ws:
-            # 通过 Websocket 发送升级成功消息，公众号网页可接收
-            reply = success_json(message={'role': 'system', 'content': message})
-            get_event_loop().run_until_complete(ws.send(reply))
+            try:
+                # 通过 Websocket 发送支付/升级成功消息，H5页面接收
+                reply = success_json(message={'role': 'system', 'content': message})
+                get_event_loop().run_until_complete(ws.send(reply))
+            except Exception as e:
+                self.logger.warn('用户 %s 已断开 WebSocket 连接，通过微信服务器发送支付/升级成功消息', openid)
+                self.send_message(openid, message, send_as_text=True)
         else:
-            # 通过微信服务器发送升级成功消息，公众号微信可接收
+            # 通过微信服务器发送支付/升级成功消息，公众号界面接收
             self.send_message(openid, message, send_as_text=True)
         return True
     
@@ -815,10 +822,10 @@ class APIController:
     def show_debug_code(self):
         openid = web.input().get('openid')
         key = web.input().get('key')
-        if not key: return RESPONSE_NO_DEBUG_CODE
+        if not key: return autoreply_mgr.get('SnippetNotExisted')
         self.logger.info('收到中转至代码调试工具请求：username=%s, key=%s', openid, key)
         data = user_mgr.get_code_list_item(openid, key)
-        if not data: return RESPONSE_NO_DEBUG_CODE
+        if not data: return autoreply_mgr.get('SnippetNotExisted')
         web.header('Content-Type', 'text/html; charset=utf-8')
         return code_handler.get_debug_html(data)
         
@@ -1047,6 +1054,7 @@ class APIController:
             if out_trade_no:
                 # 上传付款码图片
                 media_id =self.upload_wx_image(openid, os.path.basename(pay_qrcode_path), pay_qrcode_path)
+                self.send_message(openid, autoreply_mgr.get('DonateTip'), send_as_text=True)
                 if media_id:
                     self.logger.info('付款码 media_id：%s', media_id)
                     return media_id
@@ -1078,7 +1086,7 @@ class APIController:
 
     def push_article_by_url(self, openid, article_url):
         """
-        推送指定 url 的图文消息到指定用户
+        推送指定 url 的图文消息（小型）到指定用户
         """
         url = self.wx_api_url('message/custom/send')
         headers = {
@@ -1093,7 +1101,7 @@ class APIController:
                         'title': '推文',
                         'description': """为了更好提供服务，还请点下这则推文→进去滑到最底端（不用看正文！)→发消息→回复'已阅'，您就能帮助我们获得收益，使我们得以持续运营下去！再次感谢您的支持与厚爱❤""",
                         'url': article_url,
-                        'picurl': URL_PUSH_ARTICLE_COVER_IMAGE,
+                        'picurl': article_mgr.get_cover_url('ad'),
                     }
                 ]
             }
@@ -1104,7 +1112,7 @@ class APIController:
             headers=headers,
         )
 
-    def push_link(self, openid, title, description, link_url):
+    def push_link(self, openid, title, description, link_url, cover_url):
         """
         推送指定 url 的链接到指定用户
         """
@@ -1121,7 +1129,7 @@ class APIController:
                         'title': title,
                         'description': description,
                         'url': link_url,
-                        'picurl': URL_PUSH_LINK_COVER_IMAGE,
+                        'picurl': cover_url,
                     }
                 ]
             }
@@ -1189,7 +1197,7 @@ class APIController:
         """
         根据指定的 openid 和 key 返回对应的代码调试工具中转 URL
         """
-        return f'{URL_SITE_BASE}/debug-code?openid={openid}&key={key}'
+        return f'{URL_API}/debug-code?openid={openid}&key={key}'
 
     def get_chat_param(self):
         return success_json(param=bot.get_chat_param())

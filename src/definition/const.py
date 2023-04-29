@@ -4,7 +4,9 @@ if not environ.get('DEBUG'): environ['DEBUG'] = '0'
 environ['ALL_PROXY'] = 'http://127.0.0.1:8888' if environ['DEBUG'] == '1' else '' #'socks5h://127.0.0.1:7891'
 environ['TZ'] = 'Asia/Shanghai'
 environ['PORT_HTTP'] = '7000'
-environ['URL_SITE_BASE'] = 'https://freebr.cn/chatty-ai'
+environ['URL_SITE'] = 'https://freebr.cn'
+environ['URL_API'] = path.join(environ['URL_SITE'], 'chatty-ai')
+environ['URL_H5'] = path.join(environ['URL_SITE'], 'oxf')
 
 ALLOWED_FILES = ['.htm', '.html', '.css', '.js', '.jpg', '.png', '.gif', '.txt', '.webp', '.wav', '.mp3', '.mp4', '.ico', '.ttf', '.map']
 DEBUG_MODE = environ['DEBUG'] == '1'
@@ -29,12 +31,12 @@ DIR_STATIC = 'static'
 DIR_TTS = path.join(DIR_DATA, 'tts')
 DIR_USERS = path.join(DIR_DATA, 'users')
 URL_CLASH_SERVER = 'http://127.0.0.1:9090'
-URL_PUSH_ARTICLE_COVER_IMAGE = 'https://mmbiz.qpic.cn/mmbiz_png/kGCQTgD98bSWG0kV2r00U7twvqLibQS0yO8sATTvnjtoj8u3VwsXo0yJIjeebYJPJhQm8jKsXBXYSfdKZK4EOIQ/0'
-URL_PUSH_LINK_COVER_IMAGE = 'https://mmbiz.qpic.cn/mmbiz_png/kGCQTgD98bRDoEH3CxabelcicdxDfkUdCL9eDzBxNQaZUUjZFPyMDjjenA5ESwlbI5IIJia7g8Z4BG3qTUlEW67Q/0?wx_fmt=png'
-URL_SITE_BASE = environ['URL_SITE_BASE']
+URL_API = environ['URL_API']
+URL_H5 = environ['URL_H5']
+URL_DEFAULT_USER = path.join(URL_H5, 'template', 'default-user.png')
+URL_IMG2IMG_EXPORT = path.join(URL_H5, 'img2img')
+URL_POSTER_EXPORT = path.join(URL_H5, 'poster')
 URL_WEIXIN_BASE = 'https://api.weixin.qq.com/cgi-bin'
-RESPONSE_EXCEED_TOKEN_LIMIT = '【系统提示】您的消息长度超出 token 限制（%d/%d），请适当删减后再提问！🤗'
-RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后重试...'
 # 每日可赠送额度分享次数上限
 MAX_DAY_SHARE_COUNT = 5
 # 图生图一次最大上传图片数
@@ -54,8 +56,8 @@ MODEL_TEXT_COMPLETION = 'text-davinci-003'
 MODEL_EMBEDDING = 'text-embedding-ada-002'
 # 分享赠送额度系数
 SHARE_GRANT_CREDIT_SCALE = 0.9
-# 签到赠送额度系数
 SIGNUP_GRANT_CREDIT_SCALE = 0.5
+# 签到赠送额度系数
 
 COUNT_RECENT_MESSAGES_TO_TAKE_IN = 9
 COUNT_RELEVANT_MEMORY_TO_TAKE_IN = 10
@@ -66,8 +68,6 @@ CREDIT_TYPENAME_DICT = {
     COMMAND_COMPLETION: '对话',
     COMMAND_IMAGE: '图片生成',
 }
-URL_IMG2IMG_EXPORT = 'https://freebr.cn/oxf/img2img/'
-URL_POSTER_EXPORT = 'https://freebr.cn/oxf/poster/'
 SYSTEM_PROMPT_IMG2IMG = """\
 根据下面的描述生成以下 JSON:\
 {"style":"style keyword(in Chinese)",\
@@ -75,9 +75,4 @@ SYSTEM_PROMPT_IMG2IMG = """\
 "prompt":"given keywords that is good(separated by comma)",\
 "negative_prompts":"given keywords that is not good(separated by comma)"}\
 不要加任何注释。描述如下"""
-
-RESPONSE_NO_DEBUG_CODE = '啊哦~代码长翅膀飞走了~'
-MESSAGE_UPGRADE_FREE_LEVEL = '感谢您的赞赏，我们会继续为您提供更好的服务！'
-MESSAGE_UPGRADE_VIP_LEVEL = '/爱心 恭喜您已成为我们的【%s用户】！\n%s！\n感谢您的支持，我们会继续为您提供更好的服务！'
-MESSAGE_UPGRADE_FAILED = '对不起，系统出了点小问题，请联系管理员微信 freebr-cn 协助升级！'
 REGEXP_SORRY = r'抱歉|对不起|sorry'
