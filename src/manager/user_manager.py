@@ -598,3 +598,9 @@ class UserManager(metaclass=Singleton):
             self.load_user(openid)
         self.logger.info('加载用户信息成功，数量：%d', len(openids))
         return True
+
+    def reload_features(self):
+        """
+        重新加载特性配置
+        """
+        return self.feature_mgr.load()

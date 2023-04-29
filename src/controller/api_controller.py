@@ -193,6 +193,18 @@ class APIController:
             return fail_json(message=e)
         return success_json()
 
+    def update_features(self):
+        """
+        更新特性配置
+        """
+        try:
+            cfg.load()
+            user_mgr.reload_features()
+        except Exception as e:
+            self.logger.error(e)
+            return fail_json(message=e)
+        return success_json()
+
     def process_message(self, data):
         """
         解析消息
@@ -1402,6 +1414,8 @@ class APIController:
                 return self.get_donate_price()
             case ['donate', 'price', 'set']:
                 return self.set_donate_price()
+            case ['feature', 'update']:
+                return self.update_features()
             case ['image', type, 'clear']:
                 return self.clear_image_files(type=type)
             case ['init']:
