@@ -12,6 +12,7 @@ import xmltodict
 from asyncio import new_event_loop, set_event_loop, get_event_loop
 from crypt.WXBizMsgCrypt import WXBizMsgCrypt
 
+from configure import Config
 from definition.const import \
     DEBUG_MODE,\
     MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
@@ -31,6 +32,7 @@ DONATE_PRICE = 0.01
 # 发出耐心等待提示的等待时间 10s
 WAIT_TIMEOUT = 10
 voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
+cfg = Config()
 class APIController:
     logger = None
     def __init__(self, **kwargs):
@@ -183,7 +185,13 @@ class APIController:
         """
         更新推文信息字典
         """
-        return fail_json() if not article_mgr.load() else success_json()
+        try:
+            cfg.load()
+            article_mgr.load()
+        except Exception as e:
+            self.logger.error(e)
+            return fail_json(message=e)
+        return success_json()
 
     def process_message(self, data):
         """
@@ -813,6 +821,7 @@ class APIController:
         更新自动回复消息内容
         """
         try:
+            cfg.load()
             autoreply_mgr.load()
         except Exception as e:
             self.logger.error(e)
