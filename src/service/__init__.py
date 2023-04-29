@@ -6,5 +6,5 @@ from .ip_service import IpService
 from .joke_service import JokeService
 from .movie_service import MovieService
 from .phone_service import PhoneService
-from .weather_service import WeatherServiceBing as WeatherService
+from .weather_service import WeatherService
 from .wolfram_service import WolframService
