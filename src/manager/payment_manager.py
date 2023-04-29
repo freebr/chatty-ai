@@ -162,6 +162,7 @@ class PaymentManager(metaclass=Singleton):
         """
         处理支付通知
         """
+        self.logger.info('收到支付信息：%s', web.data())
         headers = web.ctx.env
         new_headers = {}
         new_headers.update({'Wechatpay-Signature': headers.get('HTTP_WECHATPAY_SIGNATURE')})
@@ -282,11 +283,12 @@ class PaymentManager(metaclass=Singleton):
         before_level = kwargs['before_level']
         pay_time = kwargs['pay_time']
         out_trade_no = kwargs['out_trade_no']
-        pay_list[openid] = {
-            'PayLevel': pay_level,
+        pay_list[out_trade_no] = {
             'BeforeLevel': before_level,
+            'PayLevel': pay_level,
             'PayTime': pay_time,
             'OutTradeNo': out_trade_no,
+            'UserId': openid,
         }
         stat_level = stat_list[pay_level]
         if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
@@ -302,33 +304,35 @@ class PaymentManager(metaclass=Singleton):
         self.save_pay_info()
         self.logger.info('用户 %s 的支付信息已记录', openid)
 
-    def remove_pay_info(self, openid):
+    def remove_pay_info(self, out_trade_no):
         """
-        根据给定的 openid 删除支付结果
+        根据给定的 out_trade_no 删除支付结果
         """
         pay_list = self.pay_info.get('PayList', {})
-        removed_pay_info = pay_list.get(openid)
+        removed_pay_info = pay_list.get(out_trade_no)
         if not removed_pay_info: return False
         stat_list = self.pay_info.get('Statistics')
         if not stat_list: raise Exception('支付信息列表已损坏，请修复')
         stat_level = stat_list.get(removed_pay_info['pay_level'])
         if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
-        pay_list.pop(openid)
+        openid = removed_pay_info['UserId']
+        pay_list.pop(out_trade_no)
         stat_level['Count'] -= 1
         self.pay_info['PayList'] = pay_list
         self.save_pay_info()
-        self.logger.info('用户 %s 的支付信息已删除', openid)
+        self.logger.info('支付信息[用户 %s 交易单号 %s]已删除', openid, out_trade_no)
         return True
 
-    def refund_pay_info(self, openid, **kwargs):
+    def refund_pay_info(self, out_trade_no, **kwargs):
         """
-        根据给定的 openid 记录退款结果
+        根据给定的 out_trade_no 记录退款结果
         """
         pay_list = self.pay_info.get('PayList', {})
-        refund_pay_info = pay_list.get(openid)
+        refund_pay_info = pay_list.get(out_trade_no)
         if not refund_pay_info: return False
         stat_level = self.pay_info.get('Statistics').get(refund_pay_info['pay_level'])
         if not stat_level: raise Exception('支付信息列表已损坏，请修复后再执行操作')
+        openid = refund_pay_info['UserId']
         refund_time = kwargs['refund_time']
         refund_amount = kwargs['refund_amount']
         refund_memo = kwargs['refund_memo']
@@ -340,12 +344,19 @@ class PaymentManager(metaclass=Singleton):
         stat_level['Count'] -= 1
         self.pay_info['PayList'] = pay_list
         self.save_pay_info()
-        self.logger.info('用户 %s 的支付退款信息已记录', openid)
+        self.logger.info('支付信息[用户 %s 交易单号 %s]已添加退款记录', openid, out_trade_no)
         return True
 
-    def get_pay_info(self, openid):
+    def get_pay_info_by_openid(self, openid):
         """
-        根据给定的 openid 获取支付结果
+        根据给定的 openid 获取支付信息列表
         """
-        pay_info = self.pay_info.get('PayList', {}).get(openid)
+        pay_infos = [ info for info in self.pay_info.get('PayList', {}).values() if info['UserId'] == openid ]
+        return pay_infos
+
+    def get_pay_info_by_out_trade_no(self, out_trade_no):
+        """
+        根据给定的 out_trade_no 获取支付信息
+        """
+        pay_info = self.pay_info.get('PayList', {}).get(out_trade_no)
         return pay_info

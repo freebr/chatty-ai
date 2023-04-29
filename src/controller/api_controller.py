@@ -12,10 +12,11 @@ import xmltodict
 from asyncio import new_event_loop, set_event_loop, get_event_loop
 from crypt.WXBizMsgCrypt import WXBizMsgCrypt
 
+from configure import Config
 from definition.const import \
-    BASE_ARTICLE_FILES, DEBUG_MODE,\
+    DEBUG_MODE,\
     MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
-    DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_DALLE, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
+    DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
     SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
     RESPONSE_ERROR_RAISED, RESPONSE_EXCEED_TOKEN_LIMIT, RESPONSE_NO_DEBUG_CODE,\
     MESSAGE_UPGRADE_FREE_LEVEL, MESSAGE_UPGRADE_VIP_LEVEL, MESSAGE_UPGRADE_FAILED,\
@@ -29,11 +30,11 @@ from service.base import bot
 
 APP_PARAM = key_token_mgr.get_app_param()
 # 赞赏金额
-DONATE_PRICE = 4.9
+DONATE_PRICE = 0.01
 # 发出耐心等待提示的等待时间 10s
 WAIT_TIMEOUT = 10
 voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
-
+cfg = Config()
 class APIController:
     logger = None
     def __init__(self, **kwargs):
@@ -50,15 +51,13 @@ class APIController:
         """
         初始化菜单
         """
-        file_path = BASE_ARTICLE_FILES['upgrade']
-        # 找到文章（升级额度）
-        with open(file_path, 'r') as f: article_id = f.read().replace('\n', '')
+        media_id = cfg.data.articles.get('media_id', {}).get('upgrade')
         # 创建菜单
         url = self.wx_api_url('menu/create')
         ret = requests.post(
             url,
             data=json.dumps(get_wx_menu(
-                article_id_upgrade=article_id,
+                article_id_upgrade=media_id,
                 voice_menu=get_voice_menu(voices_info, recommended_voices)),
             ensure_ascii=False).encode('utf-8'),
             headers={ 'Content-Type': 'application/json; charset=utf-8' },
@@ -304,11 +303,9 @@ class APIController:
                 self.logger.info('用户 %s 关注公众号', openid)
                 reply = autoreply_mgr.get('Subscribe')
                 self.send_message(openid, reply, send_as_text=True)
-                file_path = BASE_ARTICLE_FILES['usage']
-                # 推文（玩法）
-                with open(file_path, 'r') as f: article_id = f.read().replace('\n', '')
-                self.push_article_by_id(openid, article_id)
-                reply = '您好，请问有什么需要我为您解答的问题吗？'
+                media_id = cfg.data.articles.get('media_id', {}).get('usage')
+                self.push_article_by_id(openid, media_id)
+                reply = '您好，请问有什么需要我解答的问题吗？/可爱'
                 self.send_message(openid, reply, send_as_text=True)
                 return
             case 'unsubscribe':
@@ -456,51 +453,7 @@ class APIController:
         url = self.debug_api_url(openid, key)
         self.push_link(openid, title, description, url)
         return True
-    
-    def process_txt2img(self, openid, prompt):
-        """
-        处理文生图指令
-        """
-        try:
-            self.logger.info('用户 %s 发送消息触发文生图指令', openid)
-            if not self.check_remaining_credit(openid, COMMAND_IMAGE): return
-            # 判断是否在等待回答
-            if user_mgr.get_pending(openid):
-                reply = '【系统提示】您说话太快了，喝一口水休息下~'
-                self.send_message(openid, reply, send_as_text=True)
-                return
-            user_mgr.set_pending(openid, True)
-            media_id = None
-            reply_result = {'is_respond': False}
-            _thread.start_new_thread(self.warmly_tip,
-                (openid, WAIT_TIMEOUT, reply_result, '【系统提示】正在生成图片，请您稍等……')
-            )
-            # 生成图片
-            prompt = prompt.replace('图片', '')
-            result = bot.invoke_image_creation(user_mgr.users[openid], prompt)
-            if type(result) == dict:
-                if not result['content']: raise ConnectionError()
-                self.send_message(openid, result['content'], True)
-            else:
-                img_url = result
-            reply_result['is_respond'] = True
-            # 下载图片
-            img_name, img_path = self.fetch_image(openid, img_url, DIR_IMAGES_DALLE)
-            media_id = self.upload_wx_image(openid, img_name, img_path)
-            if media_id:
-                self.logger.info('图像 media_id：%s', media_id)
-                self.send_image(openid, media_id)
-                # 记录对话内容
-                user_mgr.add_message(openid, make_message('assistant', '<image>' + img_url))
-                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
-                self.check_remaining_credit(openid, COMMAND_IMAGE)
-        except Exception as e:
-            self.logger.error(e)
-            if type(e) == ConnectionError: reply = RESPONSE_ERROR_RAISED
-            self.send_message(openid, reply, send_as_text=True)
-            reply_result['is_respond'] = True
-        user_mgr.set_pending(openid, False)
-    
+        
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
         reply = ['【系统提示】欢迎体验以图生图！完成以下 3 个步骤即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
@@ -603,11 +556,11 @@ class APIController:
         self.logger.info('用户 %s 订单 %s 支付金额 %s 元', openid, out_trade_no, amount)
         level_upgrade, rights = user_mgr.get_level_rights_by_amount(amount)
         # 检查之前是否已支付
-        paid = False
-        pay_info = payment_mgr.get_pay_info(openid)
+        pay_info = payment_mgr.get_pay_info_by_out_trade_no(out_trade_no)
         self.logger.info(pay_info)
-        if pay_info and pay_info['OutTradeNo'] == out_trade_no: paid = True
-        if paid: return True
+        if pay_info and pay_info['OutTradeNo'] == out_trade_no:
+            self.logger.warn('收到订单 %s 支付通知，但此订单已处理', out_trade_no)
+            return True
         headimgurl = user_mgr.get_wx_user_info(openid)['headimgurl']
         # 记录支付信息
         payment_mgr.add_pay_info(openid=openid, headimgurl=headimgurl,
@@ -796,7 +749,6 @@ class APIController:
         try:
             match type:
                 case 'avatar': dir_path = DIR_IMAGES_AVATAR
-                case 'dalle': dir_path = DIR_IMAGES_DALLE
                 case 'img2img': dir_path = DIR_IMAGES_IMG2IMG
                 case 'markdown': dir_path = DIR_IMAGES_MARKDOWN
                 case 'poster': dir_path = DIR_IMAGES_POSTER

@@ -95,29 +95,19 @@
 >>>
 >>> key: 微信支付商户证书和私钥
 >
-> config: 配置文件存放目录（部署前需将 `.yml.tmpl` 改成 `.yml` 并修改配置）
+> config: 配置文件存放目录
 >
->> access-tokens.yml: access token 列表
+>> config.yaml.tmpl: 配置文件模板，部署服务器时需将后缀改成 `.yaml` 并修改配置内容方可运行）
 >>
->> api-keys.yml: API 密钥列表
+>> prompt-free.txt: 嵌入提示文件（适用于免费用户，不支持搜索、浏览网站和总结网页）
 >>
->> article-urls.yml: 文章地址列表
->>
->> autoreply.yml: 自动回复内容列表
->>
->> usage-article-id.yml: 用法介绍文章 ID
->>
->> upgrade-article-id.yml: 升级额度文章 ID
->>
->> wx-pay.yml: 微信支付商户信息
+>> prompt-vip.txt: 嵌入提示文件（适用于 VIP 用户）
 >
 > data: 运行时数据存放目录
 >
 >> images: 图片文件存放目录（所有图片均可通过 API: `image/<type>/clear` 删除）
 >>
 >>> avatar: 用户头像存放目录（结合网页版使用）
->>>
->>> dalle: 文生图输出图片存放目录
 >>>
 >>> img2img: 图生图输出图片存放目录
 >>>
@@ -141,7 +131,7 @@
 >>
 >>> vip-list.json: VIP 用户 openid 列表
 >>>
->>> pay-info.yml: 支付信息列表
+>>> pay-info.yaml: 支付信息列表
 >>
 >> docker-files: Docker 镜像构建所需文件
 >>

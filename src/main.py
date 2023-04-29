@@ -8,7 +8,7 @@ if __name__ == '__main__':
     for h in logging.root.handlers: logging.root.removeHandler(h)
     if not path.exists(DIR_LOGS): mkdir(DIR_LOGS)
     logging.basicConfig(
-        filename=path.join(getcwd(), f'{DIR_LOGS}/{time.strftime("%Y%m%d%H%M%S", time.localtime())}.log'),
+        filename=path.join(getcwd(), f'{DIR_LOGS}/{time.strftime("%Y%m%d", time.localtime())}.log'),
         level=logging.DEBUG,
         filemode='w',
         format='%(asctime)s - %(name)s - %(levelname)s: %(message)s',

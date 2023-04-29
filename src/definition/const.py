@@ -18,7 +18,6 @@ DIR_CLASH = '/clash'
 DIR_CONFIG = 'config'
 DIR_DATA = 'data'
 DIR_IMAGES_AVATAR = path.join(DIR_DATA, 'images/avatar')
-DIR_IMAGES_DALLE = path.join(DIR_DATA, 'images/dalle')
 DIR_IMAGES_IMG2IMG = path.join(DIR_DATA, 'images/img2img')
 DIR_IMAGES_MARKDOWN = path.join(DIR_DATA, 'images/markdown')
 DIR_IMAGES_POSTER = path.join(DIR_DATA, 'images/poster')
@@ -34,10 +33,6 @@ URL_PUSH_ARTICLE_COVER_IMAGE = 'https://mmbiz.qpic.cn/mmbiz_png/kGCQTgD98bSWG0kV
 URL_PUSH_LINK_COVER_IMAGE = 'https://mmbiz.qpic.cn/mmbiz_png/kGCQTgD98bRDoEH3CxabelcicdxDfkUdCL9eDzBxNQaZUUjZFPyMDjjenA5ESwlbI5IIJia7g8Z4BG3qTUlEW67Q/0?wx_fmt=png'
 URL_SITE_BASE = environ['URL_SITE_BASE']
 URL_WEIXIN_BASE = 'https://api.weixin.qq.com/cgi-bin'
-BASE_ARTICLE_FILES = {
-    'usage': path.abspath(path.join(DIR_CONFIG, 'usage-article-id.yml')),
-    'upgrade': path.abspath(path.join(DIR_CONFIG, 'upgrade-article-id.yml')),
-}
 RESPONSE_EXCEED_TOKEN_LIMIT = '【系统提示】您的消息长度超出 token 限制（%d/%d），请适当删减后再提问！🤗'
 RESPONSE_ERROR_RAISED = '【系统提示】当前线路过于火爆，请稍后重试...'
 # 每日可赠送额度分享次数上限
