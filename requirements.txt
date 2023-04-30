@@ -1,6 +1,7 @@
 azure-cognitiveservices-speech==1.27.0
 beautifulsoup4==4.11.2
 cpca==0.5.5
+discord.py==2.2.2
 duckduckgo-search==2.8.5
 lxml==4.9.2
 lzstring==1.0.4

@@ -36,10 +36,7 @@ class ArticleManager(metaclass=Singleton):
         """
         添加指定类型的推文 media id
         """
-        media_ids = self.article_media_ids.get(type, [])
-        if media_id in media_ids: return True
-        media_ids.append(media_id)
-        self.article_media_ids[type] = media_ids
+        self.article_media_ids[type] = media_id
         cfg.save()
         return True
 
@@ -47,10 +44,7 @@ class ArticleManager(metaclass=Singleton):
         """
         删除指定类型的推文 media id
         """
-        media_ids = self.article_media_ids.get(type, [])
-        if media_id in media_ids: return True
-        media_ids.remove(media_id)
-        self.article_media_ids[type] = media_ids
+        self.article_media_ids[type] = None
         cfg.save()
         return True
 
