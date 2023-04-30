@@ -1334,6 +1334,18 @@ class APIController:
             self.logger.error('用户 %s 上传文件失败：%s', openid, str(e))
             return fail_json(message=str(e))
 
+    def discord_interactions(self):
+        return success_json()
+
+    def discord_verify_user(self):
+        return success_json()
+
+    def discord_terms_of_service(self):
+        return success_json()
+
+    def discord_privacy_policy(self):
+        return success_json()
+
     def cross_origin(self):
         web.header('Access-Control-Allow-Origin', '*')
         web.header('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type')
@@ -1410,6 +1422,14 @@ class APIController:
                 return self.update_autoreply()
             case ['debug-code']:
                 return self.show_debug_code()
+            case ['dscd', 'interactions']:
+                return self.discord_interactions()
+            case ['dscd', 'verify-user']:
+                return self.discord_verify_user()
+            case ['dscd', 'terms-of-service']:
+                return self.discord_terms_of_service()
+            case ['dscd', 'privacy-policy']:
+                return self.discord_privacy_policy()
             case ['donate', 'price']:
                 return self.get_donate_price()
             case ['donate', 'price', 'set']:
