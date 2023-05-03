@@ -202,7 +202,7 @@ class UserManager(metaclass=Singleton):
         为指定用户添加消息记录
         """
         if openid not in self.users: self.register_user(openid)
-        self.users[openid]['records'] += messages
+        self.users[openid]['records'] += [message for message in messages if message]
         self.dump_user(openid)
 
     def clear_conversation(self, openid):

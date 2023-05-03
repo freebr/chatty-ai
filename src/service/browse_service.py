@@ -1,4 +1,5 @@
 import requests.api as requests
+import requests.exceptions
 from bs4 import BeautifulSoup
 from logging import getLogger, Logger
 from urllib.parse import urlparse, urljoin
@@ -25,7 +26,7 @@ class BrowseService(metaclass=Singleton):
             if get_links:
                 links = self.get_hyperlinks(url)
                 # Limit links to 5
-                if len(links) > 5:
+                if type(links) == list and len(links) > 5:
                     links = links[:5]
                 result = f'网页内容摘要:{summary}\n\n链接:{links}'
             else:
@@ -69,7 +70,7 @@ class BrowseService(metaclass=Singleton):
         local_prefixes = ['file:///', 'file://localhost', 'http://localhost', 'https://localhost']
         return any(url.startswith(prefix) for prefix in local_prefixes)
 
-    def get_response(self, url, headers=cfg.data.features['UserAgent'], timeout=10):
+    def get_response(self, url, headers={'Content-Type': 'text/html; charset=utf-8', 'UserAgent': cfg.data.features['UserAgent']}, timeout=10):
         try:
             # Restrict access to local files
             if self.check_local_file_access(url):
@@ -102,7 +103,7 @@ class BrowseService(metaclass=Singleton):
         if error_message:
             return error_message
 
-        soup = BeautifulSoup(response.text, 'lxml')
+        soup = BeautifulSoup(response.text.encode('iso-8859-1').decode('utf-8'), 'lxml')
 
         for script in soup(['script', 'style']):
             script.extract()

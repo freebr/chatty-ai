@@ -17,6 +17,7 @@ from definition.const import \
     DEBUG_MODE,\
     MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
     DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
+    REGEXP_IMAGE, REGEXP_SORRY,\
     SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
     URL_CLASH_SERVER, URL_DEFAULT_USER, URL_API, URL_WEIXIN_BASE
 from handler import code_handler
@@ -246,6 +247,7 @@ class APIController:
                         return
                     try:
                         # 通过语义理解获取用户需要的风格和给出的提示
+                        content += '\nOutput:'
                         result = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMG2IMG, content=content)
                         self.logger.info(result)
                         # 提取 JSON
@@ -262,14 +264,18 @@ class APIController:
                         #     self.send_message(openid, '\n'.join(reply), send_as_text=True)
                         #     return
                         self.logger.info('用户 %s 输入提示：%s', openid, content)
-                        style = info.get('style')
-                        if not style:
-                            style = 'MJ风格'
-                        else:
+                        # 生成模式
+                        mode = info.get('mode', '').strip().lower()
+                        info['mode'] = mode
+                        # 风格
+                        style = info.get('style', '').strip()
+                        if style != 'MJ风格':
                             style = style.replace('风格', '')
-                        info['prompt'] = info.get('prompt', '').replace(style, '')
-                        info['negative_prompts'] = info.get('negative_prompts', '').replace(style, '')
-                        img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'])
+                        # 提示
+                        prompt = info.get('prompt', '').replace(style, '').strip()
+                        # 负面提示
+                        negative_prompts = info.get('negative_prompts', '').replace(style, '').strip()
+                        img2img_mgr.add_user_image_info(openid, controlnet_task=mode, style=style, prompt=prompt, negative_prompts=negative_prompts)
                         self.process_img2img(openid, prompt=content)
                     except Exception as e:
                         self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
@@ -403,7 +409,6 @@ class APIController:
                     reply_result['is_respond'] = True
                     self.set_typing(openid, True)
                     reply = reply.strip('\n')
-                    assistant_reply += reply
                     # 保证发出下一消息前有足够时间间隔，避免微信拒绝响应
                     if last_sent_time != 0 and time.time() - last_sent_time < 2: time.sleep(1)
                     last_sent_time = time.time()
@@ -435,11 +440,14 @@ class APIController:
                         if media_id:
                             self.logger.info('图像 media_id：%s', media_id)
                             self.send_image(openid, media_id)
+                        assistant_reply += reply
                     else:
                         self.send_message(openid, reply)
-                        # 对代码片段进行处理
-                        if not reply.startswith('```'): continue
-                        if not self.process_snippet(openid, reply): continue
+                        if reply.startswith('```'):
+                            # 对代码片段进行处理
+                            self.process_snippet(openid, reply)
+                        if not re.search(REGEXP_SORRY, reply, re.I):
+                            assistant_reply += reply
                 # 记录对话内容
                 user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
                 user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
@@ -471,12 +479,15 @@ class APIController:
         
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】欢迎体验以图生图！完成以下 3 个步骤即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
-        reply += ['1️⃣请选择图片预处理方式：']
+        reply = ['【系统提示】欢迎体验“以图生图”！只需 3 步即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
+        reply += ['1️⃣选择生成模式：']
         reply += ['❇️' + task for task in img2img_mgr.get_controlnet_task_list()]
-        reply += ['2️⃣请选择您想要转换成的风格：']
+        reply += ['2️⃣选择想要转换成的风格：']
         reply += img2img_mgr.get_style_list()
         reply += ['3️⃣请在输入框继续输入您希望生成的内容！']
+        reply += ['示例1️⃣ 模式 canny, 风格 动漫, 提示 猫娘 少女 浪漫']
+        reply += ['示例2️⃣ 模式 hed, 风格 国画, 提示 山水 田园 复古']
+        reply += ['示例3️⃣ 模式 pose, 风格 赛博朋克, 提示 失落 文明 废墟']
         reply += ['❓想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
         reply += ['ℹ️要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']
         img_url = kwargs.get('img_url')
@@ -493,7 +504,6 @@ class APIController:
         self.send_message(openid, '\n'.join(reply), send_as_text=True)
         img2img_mgr.add_user_image_info(openid, img_path=src_path, prompt=prompt, style=style)
         user_mgr.set_img2img_mode(openid, True)
-        self.process_img2img(openid)
 
     def process_img2img(self, openid, prompt=''):
         """
@@ -502,9 +512,13 @@ class APIController:
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
             if not self.check_remaining_credit(openid, COMMAND_IMAGE): return
-            if not img2img_mgr.check_img2img_valid(openid): return
+            if not img2img_mgr.check_img2img_valid(openid):
+                info = img2img_mgr.get_user_image_info(openid)
+                reply = autoreply_mgr.get('Img2ImgStatus') % (info.get('controlnet_task') or '<请指定>', info.get('style') or '<请指定>', info.get('prompt') or '<未指定>', info.get('negative_prompts') or '<未指定>')
+                self.send_message(openid, reply, send_as_text=True)
+                return
             if user_mgr.get_pending(openid):
-                reply = '【系统提示】您说话太快了，喝一口水休息下~'
+                reply = '【系统提示】请先等我把画画完~'
                 self.send_message(openid, reply, send_as_text=True)
                 return
             user_mgr.set_pending(openid, True)
@@ -527,8 +541,8 @@ class APIController:
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
         if self.check_remaining_credit(openid, COMMAND_IMAGE):
-            style = img2img_mgr.get_user_image_info(openid)['style']
-            reply = f'已为您将图片转变为【{style}】的效果。如果想让我再画一张，请<a href=\'weixin://bizmsgmenu?msgmenucontent={web.urlquote(prompt)}&msgmenuid=0\'>点击这里</a>。<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>返回对话模式</a>'
+            info = img2img_mgr.get_user_image_info(openid)
+            reply = autoreply_mgr.get('Img2ImgSuccess') % (info.get('controlnet_task'), info.get('style'), info.get('prompt'), info.get('negative_prompts') or '<未指定>')
             self.send_message(openid, reply, send_as_text=True)
     
     def process_donate_request(self, openid):
@@ -1334,18 +1348,6 @@ class APIController:
             self.logger.error('用户 %s 上传文件失败：%s', openid, str(e))
             return fail_json(message=str(e))
 
-    def discord_interactions(self):
-        return success_json()
-
-    def discord_verify_user(self):
-        return success_json()
-
-    def discord_terms_of_service(self):
-        return success_json()
-
-    def discord_privacy_policy(self):
-        return success_json()
-
     def cross_origin(self):
         web.header('Access-Control-Allow-Origin', '*')
         web.header('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type')
@@ -1422,14 +1424,6 @@ class APIController:
                 return self.update_autoreply()
             case ['debug-code']:
                 return self.show_debug_code()
-            case ['dscd', 'interactions']:
-                return self.discord_interactions()
-            case ['dscd', 'verify-user']:
-                return self.discord_verify_user()
-            case ['dscd', 'terms-of-service']:
-                return self.discord_terms_of_service()
-            case ['dscd', 'privacy-policy']:
-                return self.discord_privacy_policy()
             case ['donate', 'price']:
                 return self.get_donate_price()
             case ['donate', 'price', 'set']:

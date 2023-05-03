@@ -63,8 +63,8 @@ class Img2ImgManager(metaclass=Singleton):
         img_path = kwargs.get('img_path')
         if img_path: self.users[name]['img_path'].append(img_path)
         for key in ['controlnet_task', 'negative_prompts', 'prompt', 'style']:
-            value = kwargs.get(key)
-            self.users[name][key] = value
+            value = kwargs.get(key) or ''
+            if value: self.users[name][key] = value
         return True
 
     def get_user_image_info(self, name):
@@ -132,6 +132,8 @@ class Img2ImgManager(metaclass=Singleton):
                 }
                 for key, default_value in self.DEFAULT_PARAMS.items():
                     param_data[key] = params.get(key, user.get(key, default_value))
+                if not param_data['controlnet_task'].endswith('-from-image'):
+                    param_data['controlnet_task'] += '-from-image'
                 url = self.api_url('v1/img2img')
                 res = requests.post(
                     url,
@@ -185,7 +187,7 @@ class Img2ImgManager(metaclass=Singleton):
         for name, desc in CONTROLNET_TASK_LIST.items():
             counter += 1
             if type == 'wechat':
-                line = f'<a href=\'weixin://bizmsgmenu?msgmenucontent={name}&msgmenuid=0\'>{desc}</a>'
+                line = desc
             elif type == 'web':
                 line = f'<a href=\'#\' data-message=\'@append-prompt:预处理器[{web.urlquote(name)}]\'>{desc}</a>'
             ret.append(line)
@@ -202,7 +204,7 @@ class Img2ImgManager(metaclass=Singleton):
             # show_text = '{} {}人次使用'.format(style, info['used_count'])
             counter += 1
             if type == 'wechat':
-                line += f'<a href=\'weixin://bizmsgmenu?msgmenucontent={style}&msgmenuid=0\'>{style}</a>'
+                line += style
             elif type == 'web':
                 line += f'<a href=\'#\' data-message=\'@append-prompt:风格[{web.urlquote(style)}]\'>{style}</a>'
             if counter % 3 == 0:
@@ -215,22 +217,13 @@ class Img2ImgManager(metaclass=Singleton):
 
     def get_prompt_examples(self):
         ret = [
-            '例如：',
-            '当您想要升级某些元素（背景、眼睛或衣服）的质感时，可添加以下提示词：'
-            'extremely detailed /* 某些元素 */',
-            'beautiful detailed /* 某种元素 */',
-            '基本吟唱魔法：best quality, ultra-detailed, masterpiece, finely detail, highres, 8k wallpaper',
-            '人物吟唱魔法：beautiful detailed eyes, highly detailed skin, extremely delicate and beautiful girls',
-            '主体远近：full body shot(全身) / cowboy shot(半身) / close-up shot(接近)',
-            '光线指定：cinematic lighting(电影光) / dynamic lighting(动感光)',
-            '视角指定：dynamic angle / from above / from below / wide shot / Aerial View',
-            '视线指定：looking at viewer / looking at another / looking away / looking back / looking up',
-            '服装指定：china dress / sailor dress / school uniform / sailor senshi uniform',
-            '身体指定：blush(脸红)/ wet sweat(大汗) / flying sweatdrops(飞汗)',
-            '姿势指定：hands on own face / hands on feet / hands on breast / kneeling / hand between legs / hair flip / skirt flip',
-            '使提示词更强：用 () 括起元素',
-            '使提示词更弱：用 [] 括起元素',
-            '元素后加一个数值表示强调倍数，数值越大该元素越强化，如：春天(1.5)/笑脸(1.9)/星空(2.5)',
+            '图片生成提示举例：',
+            '✅预处理 canny, 风格 动漫, 提示 猫娘 少女 浪漫',
+            '✅预处理 hed, 风格 国画, 提示 山水 田园 复古',
+            '✅预处理 pose, 风格 赛博朋克, 提示 失落 文明 废墟',
+            'ℹ️使提示词更强：用 () 括起元素',
+            'ℹ️使提示词更弱：用 [] 括起元素',
+            'ℹ️元素后加一个数值表示强调倍数，数值越大该元素越强化，如：春天(1.5)/笑脸(1.9)/星空(2.5)',
         ]
         return ret
 
@@ -327,12 +320,12 @@ STYLE_LIST = [
 ]
 
 CONTROLNET_TASK_LIST = {
-    'canny-from-image': 'Canny：能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
-    'depth-from-image': '深度检测：可使出图保持与原图一致的纵深关系',
-    'hed-from-image': 'HED：更好保留柔和边缘细节，适合重新着色和风格化',
-    'mlsd-from-image': 'MLSD：适合出建筑设计效果图',
-    'normal-from-image': '法线贴图：光影处理效果好，适合CG、游戏美术设计',
-    'pose-from-image': '骨骼姿势：适合人物形象转换',
-    'scribble-from-image': '涂鸦标注：可由简笔画生成效果图',
-    'seg-from-image': '语义分割：可由一系列色块生成效果图',
+    'canny': 'Canny：能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
+    'depth': '深度检测：可使出图保持与原图一致的纵深关系',
+    'hed': 'HED：更好保留柔和边缘细节，适合重新着色和风格化',
+    'mlsd': 'MLSD：适合出建筑设计效果图',
+    'normal': '法线贴图：光影处理效果好，适合CG、游戏美术设计',
+    'pose': '骨骼姿势：适合人物形象转换',
+    'scribble': '涂鸦标注：可由简笔画生成效果图',
+    'seg': '语义分割：可由一系列色块生成效果图',
 }

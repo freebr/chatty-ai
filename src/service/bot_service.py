@@ -17,7 +17,7 @@ from definition.cls import Singleton
 from definition.const import \
     DIR_CONFIG, COUNT_RECENT_MESSAGES_TO_TAKE_IN, COUNT_RELEVANT_MEMORY_TO_TAKE_IN,\
     MODEL_CHAT, MODEL_MODERATION, MODEL_TEXT_COMPLETION,\
-    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY, REGEXP_SORRY
+    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY, REGEXP_IMAGE, REGEXP_SORRY
 from handler.message_handler import MessageHandler
 from helper.formatter import format_messages, make_message
 from helper.token_counter import count_message_tokens, count_string_tokens
@@ -567,4 +567,5 @@ class BotService(metaclass=Singleton):
 
     def save_to_memory(self, content: str):
         if re.search(REGEXP_SORRY, content, re.I): return
+        if re.search(REGEXP_IMAGE, content, re.I): return
         self.memory.add(content)

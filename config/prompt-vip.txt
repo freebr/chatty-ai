@@ -24,7 +24,7 @@ COMMAND LIST:
 10.查询天气, args: "place": "<place>"
 11.数学问题, args: "question": "<question in English>"
 12.数学图像, args: "question": "<what you want to ask Wolfram Alpha in English>"
-13.非数学绘画, args: "prompt": "<prompt keyword in English separated by comma>", "style": "<painting style>"
+13.非数学绘画, args: "prompt": "<prompt keyword in English separated by comma>", "style": "<painting style or empty if do not specified>"
 
 请用中文回答问题，除非用户有要求。
 

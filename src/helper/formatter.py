@@ -42,6 +42,7 @@ def make_message(role, content):
     """
     返回一条消息记录
     """
+    if not content: return
     return {'role': role, 'content': content, '__token': count_message_tokens([{'role': role, 'content': content}], MODEL_CHAT)}
 
 def format_messages(messages: List[Dict[str, str]]):

@@ -30,8 +30,8 @@ class ImageService(metaclass=Singleton):
         调用服务并返回信息
         """
         results = []
-        prompts = args.get('prompt')
-        styles = args.get('style')
+        prompts = args.get('prompt', '')
+        styles = args.get('style', '')
         if type(prompts) == str: prompts = [prompts]
         if type(styles) == str: styles = [styles]
         for index, prompt in enumerate(prompts):

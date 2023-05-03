@@ -36,9 +36,9 @@ class MessageHandler:
         index = text.find('```')
         if index != -1:
             if code_mode:
-                index_r = text.rfind('\n```')
-                if index_r != -1:
-                    index_r += 4
+                index_r = text.rfind('```')
+                if index_r != -1 and index != index_r:
+                    index_r += 3
                     return (text[index:index_r], index_r + offset, False)
                 else:
                     return ('', offset, True)

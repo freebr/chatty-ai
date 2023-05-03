@@ -69,10 +69,11 @@ CREDIT_TYPENAME_DICT = {
     COMMAND_IMAGE: '图片生成',
 }
 SYSTEM_PROMPT_IMG2IMG = """\
-根据下面的描述生成以下 JSON:\
-{"style":"style keyword(in Chinese)",\
-"preprocessor":"given preprocessor",\
-"prompt":"given keywords that is good(separated by comma)",\
-"negative_prompts":"given keywords that is not good(separated by comma)"}\
-不要加任何注释。描述如下"""
+Output the following JSON according to the content of <desc>:\
+{"style":"style keyword occurred in <desc>(in Chinese, empty if not occurred)",\
+"mode":"mode occurred in <desc>(empty if not occurred)",\
+"prompt":"good keywords occurred in <desc>(empty if not occurred, separated by comma)",\
+"negative_prompts":"bad keywords occurred in <desc>(empty if not occurred, separated by comma)"}\
+不要加任何注释。<desc>:"""
 REGEXP_SORRY = r'抱歉|对不起|sorry'
+REGEXP_IMAGE = r'我(已经)?为您(画|生成|绘制|绘画)了一(幅|张)图(像|片)'
