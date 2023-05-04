@@ -281,7 +281,6 @@ class WebsocketController:
         await self.send_as_role(ws, result='success', role='system', content=reply)
         img2img_mgr.add_user_image_info(openid, img_path=img_path)
         user_mgr.set_img2img_mode(openid, True)
-        await self.process_img2img(ws, openid)
 
     async def process_img2img(self, ws, openid, input=''):
         """

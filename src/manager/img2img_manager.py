@@ -197,7 +197,7 @@ class Img2ImgManager(metaclass=Singleton):
             if type == 'wechat':
                 line = desc
             elif type == 'web':
-                line = f'<a href=\'#\' data-message=\'@append-prompt:预处理器[{web.urlquote(name)}]\'>{desc}</a>'
+                line = f"""<a href="#" data-message="@append-prompt:模式:{web.urlquote(name)}">{desc}</a>"""
             ret.append(line)
         return ret
 
@@ -214,7 +214,7 @@ class Img2ImgManager(metaclass=Singleton):
             if type == 'wechat':
                 line += style
             elif type == 'web':
-                line += f'<a href=\'#\' data-message=\'@append-prompt:风格[{web.urlquote(style)}]\'>{style}</a>'
+                line += f"""<a href="#" data-message="@append-prompt:风格:{web.urlquote(style)}">{style}</a>"""
             if counter % 3 == 0:
                 ret.append(line)
                 line = ''

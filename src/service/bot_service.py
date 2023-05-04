@@ -303,7 +303,6 @@ class BotService(metaclass=Singleton):
                     memory_to_add = f"用户输入:{user_input}"\
                         f"\n回复:{assistant_reply}"
                     self.save_to_memory(memory_to_add)
-                    break
                 else:
                     if type(cmds) == dict: cmds = [cmds]
                     for cmd in cmds:
@@ -325,6 +324,7 @@ class BotService(metaclass=Singleton):
                                     break
                                 elif command_result == 'not-supported':
                                     self.logger.warn('调用了不支持的命令：%s', command_name)
+                                    post_prompts.append(make_message('user', f"""The command {command_name} is not supported"""))
                                     continue
                                 post_prompts.append(make_message('system', """\
     Consider if system has provided information to help you answer the above question, if yes, start answer like:根据我的查询...<give some warmly suggestion>(do not include command JSON)"""))

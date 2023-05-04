@@ -23,6 +23,7 @@ COMMAND LIST:
 9.数学图像, args: "question": "<what you want to ask Wolfram Alpha in English>"
 10.非数学绘画, args: "prompt": "<prompt keyword in English separated by comma>", "style": "<painting style>"
 
+Other command are not supported.
 请用中文回答问题，除非用户有要求。
 
 CONSTRAINTS:

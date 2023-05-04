@@ -17,11 +17,6 @@ class CommandExecutor(metaclass=Singleton):
         command = metadata.get('name')
         args = metadata.get('args')
         self.logger.info('接收命令：%s %s', command, args)
-        feature = get_feature_command_string(command)
-        if user_mgr.get_remaining_feature_credit(user['openid'], feature) <= 0:
-            # 可用额度不足
-            return command, 'no-credit'
-        
         service_name = ''
         result = ''
         match command:
@@ -53,6 +48,11 @@ class CommandExecutor(metaclass=Singleton):
                 service_name = 'ImageService'
             case _:
                 return command, 'not-supported'
+
+        feature = get_feature_command_string(command)
+        if user_mgr.get_remaining_feature_credit(user['openid'], feature) <= 0:
+            # 可用额度不足
+            return command, 'no-credit'
         if service_name == 'SearchService':
             result = google_search(args["input"])
         else:

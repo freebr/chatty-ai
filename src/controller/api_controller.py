@@ -1284,6 +1284,7 @@ class APIController:
         返回支付记录统计信息
         """
         pay_stats = payment_mgr.pay_info.get('Statistics')
+        self.cross_origin()
         return success_json(**pay_stats)
 
     def make_poster(self):
