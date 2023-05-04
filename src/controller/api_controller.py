@@ -825,6 +825,17 @@ class APIController:
             self.logger.error(e)
             return fail_json(message=e)
         return success_json()
+        
+    def reload_config(self):
+        """
+        重新加载配置
+        """
+        try:
+            cfg.load()
+        except Exception as e:
+            self.logger.error(e)
+            return fail_json(message=e)
+        return success_json()
 
     def show_debug_code(self):
         openid = web.input().get('openid')
@@ -1395,6 +1406,8 @@ class APIController:
                 return self.list_wx_articles(offset=offset)
             case ['autoreply', 'update']:
                 return self.update_autoreply()
+            case ['config', 'reload']:
+                return self.reload_config()
             case ['debug-code']:
                 return self.show_debug_code()
             case ['donate', 'price']:

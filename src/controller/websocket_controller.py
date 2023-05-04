@@ -106,7 +106,7 @@ class WebsocketController:
                                 # 按图生图风格处理
                                 if content == '图生图提示举例':
                                     reply = img2img_mgr.get_prompt_examples()
-                                    await self.send_as_role(ws, result='success', role='system', content='\n'.join(reply))
+                                    await self.send_as_role(ws, result='success', role='system', content=reply)
                                     continue
                                 try:
                                     # 通过语义理解获取用户需要的风格和给出的提示
