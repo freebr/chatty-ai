@@ -1,3 +1,3 @@
-client/*.*
-key/*.*
+wxpay/client/*.*
+wxpay/key/*.*
 ws
