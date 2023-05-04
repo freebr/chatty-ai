@@ -1,7 +1,6 @@
 import _thread
 import hashlib
 import json
-import logging
 import os
 import re
 import requests.api as requests
@@ -11,16 +10,16 @@ import web
 import xmltodict
 from asyncio import new_event_loop, set_event_loop, get_event_loop
 from crypt.WXBizMsgCrypt import WXBizMsgCrypt
+from logging import getLogger, Logger
 
 from configure import Config
 from definition.const import \
     DEBUG_MODE,\
     MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
     DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
-    REGEXP_IMAGE, REGEXP_SORRY,\
-    SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
-    URL_CLASH_SERVER, URL_DEFAULT_USER, URL_API, URL_WEIXIN_BASE
-from handler import code_handler
+    REGEXP_MARKDOWN_IMAGE, REGEXP_TEXT_SORRY, SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
+    URL_CLASH_SERVER, URL_DEFAULT_USER, URL_API, URL_WEIXIN_BASE, WAIT_TIMEOUT
+from handler import code_handler, img_handler, msg_handler
 from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_query_string, make_message, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
 from manager import article_mgr, autoreply_mgr, chatgroup_mgr, key_token_mgr, img2img_mgr, payment_mgr, poster_mgr, user_mgr, voices_mgr, wxjsapi_mgr
@@ -28,16 +27,12 @@ from numpy import Infinity
 from service.base import bot
 
 APP_PARAM = key_token_mgr.get_app_param()
-# 赞赏金额
-DONATE_PRICE = 0.01
-# 发出耐心等待提示的等待时间 10s
-WAIT_TIMEOUT = 10
 voices_info, recommended_voices = voices_mgr.get_voices_info(engine=TTS_ENGINE)
 cfg = Config()
 class APIController:
-    logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = logging.getLogger('APICTLR')
+        self.logger = getLogger(self.__class__.__name__)
         payment_mgr.set_payment_success_callback(self.payment_success_callback)
         set_event_loop(new_event_loop())
     
@@ -243,27 +238,18 @@ class APIController:
                     # 按图生图风格处理
                     if content == '图生图提示举例':
                         reply = img2img_mgr.get_prompt_examples()
-                        self.send_message(openid, '\n'.join(reply), send_as_text=True)
+                        self.send_message(openid, reply, send_as_text=True)
                         return
                     try:
                         # 通过语义理解获取用户需要的风格和给出的提示
-                        content += '\nOutput:'
-                        result = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMG2IMG, content=content)
+                        result = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMG2IMG, content=content + '\nOutput:')
                         self.logger.info(result)
                         # 提取 JSON
                         match = re.search(r'\{(.*)\}', result, re.S)
                         # 未提取到 JSON 结构，放弃提取
                         if not match: return
                         info = json.loads(match[0])
-                        # style = img2img_mgr.find_style(content)
-                        # if not style:
-                        #     reply = ['非常抱歉，暂不支持该风格，请重新选择！']
-                        #     reply += img2img_mgr.get_style_list()
-                        #     reply += ['想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
-                        #     reply += ['要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']
-                        #     self.send_message(openid, '\n'.join(reply), send_as_text=True)
-                        #     return
-                        self.logger.info('用户 %s 输入提示：%s', openid, content)
+                        self.logger.info('用户 %s 输入图生图要求：%s', openid, content)
                         # 生成模式
                         mode = info.get('mode', '').strip().lower()
                         info['mode'] = mode
@@ -273,10 +259,10 @@ class APIController:
                             style = style.replace('风格', '')
                         # 提示
                         prompt = info.get('prompt', '').replace(style, '').strip()
-                        # 负面提示
+                        # 负向提示
                         negative_prompts = info.get('negative_prompts', '').replace(style, '').strip()
                         img2img_mgr.add_user_image_info(openid, controlnet_task=mode, style=style, prompt=prompt, negative_prompts=negative_prompts)
-                        self.process_img2img(openid, prompt=content)
+                        self.process_img2img(openid, input=content)
                     except Exception as e:
                         self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
                         self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
@@ -414,39 +400,22 @@ class APIController:
                     last_sent_time = time.time()
                     if re.match(r'```\s*image', reply):
                         # 获取图片
-                        img_url = re.search('!\[[^\]]*\]\(([^\)]+)\)', reply)[1]
-                        img_name, img_path = self.fetch_image(openid, img_url, DIR_IMAGES_MARKDOWN)
-                        # 裁剪空白
-                        from PIL import Image, ImageChops, ImageColor
-                        img = Image.open(img_path)
-                        if img.mode == 'P':
-                            img = img.convert('RGB')
-                        bg = Image.new(img.mode, img.size, ImageColor.getrgb('white'))
-                        diff = ImageChops.difference(img, bg)
-                        diff = ImageChops.add(diff, diff, 2.0, -100)
-                        bbox = diff.getbbox()
-                        if bbox:
-                            edge_width = 5
-                            new_size = (bbox[2] - bbox[0] + 1 + edge_width * 2, bbox[3] - bbox[1] + 1 + edge_width * 2)
-                            corner = (edge_width, edge_width)
-                            img_new = Image.new(img.mode, new_size, ImageColor.getrgb('white'))
-                            img_crop = img.crop(bbox)
-                            img_new.paste(img_crop, corner)
-                        else:
-                            img_new = img
-                        img_new.save(img_path)
-                        # 发送图片
-                        media_id = self.upload_wx_image(openid, img_name, img_path)
-                        if media_id:
-                            self.logger.info('图像 media_id：%s', media_id)
-                            self.send_image(openid, media_id)
-                        assistant_reply += reply
+                        img_url = re.search(REGEXP_MARKDOWN_IMAGE, reply)[1]
+                        img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_MARKDOWN)
+                        success, dest_path = img_handler.crop_image(src_path)
+                        if success:
+                            # 发送图片
+                            media_id = self.upload_wx_image(openid, img_name, dest_path)
+                            if media_id:
+                                self.logger.info('图像 media_id：%s', media_id)
+                                self.send_image(openid, media_id)
+                            assistant_reply += reply
                     else:
                         self.send_message(openid, reply)
                         if reply.startswith('```'):
                             # 对代码片段进行处理
                             self.process_snippet(openid, reply)
-                        if not re.search(REGEXP_SORRY, reply, re.I):
+                        if not re.search(REGEXP_TEXT_SORRY, reply, re.I):
                             assistant_reply += reply
                 # 记录对话内容
                 user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
@@ -479,33 +448,30 @@ class APIController:
         
     def process_img2img_request(self, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】欢迎体验“以图生图”！只需 3 步即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
-        reply += ['1️⃣选择生成模式：']
-        reply += ['❇️' + task for task in img2img_mgr.get_controlnet_task_list()]
-        reply += ['2️⃣选择想要转换成的风格：']
-        reply += img2img_mgr.get_style_list()
-        reply += ['3️⃣请在输入框继续输入您希望生成的内容！']
-        reply += ['示例1️⃣ 模式 canny, 风格 动漫, 提示 猫娘 少女 浪漫']
-        reply += ['示例2️⃣ 模式 hed, 风格 国画, 提示 山水 田园 复古']
-        reply += ['示例3️⃣ 模式 pose, 风格 赛博朋克, 提示 失落 文明 废墟']
-        reply += ['❓想要获得提示灵感，<a href=\'weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0\'>点击这里</a>']
-        reply += ['ℹ️要返回对话模式，发送<a href=\'weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0\'>结束</a>即可']
         img_url = kwargs.get('img_url')
         src_path = None
-        prompt = kwargs.get('prompt')
-        style = kwargs.get('style')
         if img_url:
             # 下载图片
             src_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_UPLOAD)
             info = img2img_mgr.get_user_image_info(openid)
             if info and len(info['img_path']) >= MAX_UPLOAD_IMAGES:
-                img2img_mgr.unregister_user(openid)
-                reply.insert(1, '已切换新上传的原图！')
-        self.send_message(openid, '\n'.join(reply), send_as_text=True)
-        img2img_mgr.add_user_image_info(openid, img_path=src_path, prompt=prompt, style=style)
+                img2img_mgr.clear_user_images(openid)
+                reply = '【系统提示】已切换新的原图！'
+                self.send_message(openid, reply, send_as_text=True)
+        reply = img2img_mgr.get_guide() % (
+            '\n'.join(['❇️' + task for task in img2img_mgr.get_controlnet_task_list()]),
+            '\n'.join(img2img_mgr.get_style_list()),
+            '',
+            """<a href="weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0">点击这里</a>""",
+            """<a href="weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0">结束</a>"""
+        )
+        self.send_message(openid, reply, send_as_text=True)
+        reply = img2img_mgr.get_guide_examples()
+        self.send_message(openid, reply, send_as_text=True)
+        img2img_mgr.add_user_image_info(openid, img_path=src_path)
         user_mgr.set_img2img_mode(openid, True)
 
-    def process_img2img(self, openid, prompt=''):
+    def process_img2img(self, openid, input):
         """
         处理图生图指令
         """
@@ -542,7 +508,13 @@ class APIController:
         user_mgr.set_pending(openid, False)
         if self.check_remaining_credit(openid, COMMAND_IMAGE):
             info = img2img_mgr.get_user_image_info(openid)
-            reply = autoreply_mgr.get('Img2ImgSuccess') % (info.get('controlnet_task'), info.get('style'), info.get('prompt'), info.get('negative_prompts') or '<未指定>')
+            reply = autoreply_mgr.get('Img2ImgSuccess') % (
+                info.get('controlnet_task'),
+                info.get('style'),
+                info.get('prompt') or '<未指定>',
+                info.get('negative_prompts') or '<未指定>',
+                f"""<a href="weixin://bizmsgmenu?msgmenucontent={web.urlquote(input)}&msgmenuid=0">点击这里</a>""",
+                """<a href="weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0">返回对话模式</a>""")
             self.send_message(openid, reply, send_as_text=True)
     
     def process_donate_request(self, openid):
@@ -868,19 +840,19 @@ class APIController:
         """
         返回当前设置的打赏金额
         """
-        return success_json(price=DONATE_PRICE)
+        return success_json(price=cfg.data.prices.get('Donation'))
 
     def set_donate_price(self):
         """
         设置打赏金额
         """
-        global DONATE_PRICE
         price = web.input().get('price')
         if not price:
             return fail_json(message='请输入付款金额（单位：元，可精确到两位小数）！')
         elif not re.match('\\d+(.\\d(\\d)?)?', price):
             return fail_json(message='请输入有效的付款金额（单位：元，可精确到两位小数）！')
-        DONATE_PRICE = float(price)
+        cfg.data.prices['Donation'] = float(price)
+        cfg.save()
         return success_json()
 
     def update_bot_access_token(self):
@@ -924,7 +896,7 @@ class APIController:
         """
         更新敏感词词典
         """
-        if not bot.msg_handler.read_sensitive_words():
+        if not msg_handler.read_sensitive_words():
             self.logger.error('更新敏感词词典失败')
             return fail_json()
         self.logger.info('更新敏感词词典成功')
@@ -1083,7 +1055,7 @@ class APIController:
         try:
             pay_qrcode_path, out_trade_no = payment_mgr.create_native_pay(
                 description='打赏·查小特AI',
-                price=DONATE_PRICE,
+                price=cfg.data.prices.get('Donation'),
                 to_file=True,
             )
             if out_trade_no:

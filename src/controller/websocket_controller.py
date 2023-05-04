@@ -5,7 +5,7 @@ import socket
 import web
 import websockets
 from asyncio import get_event_loop, new_event_loop, set_event_loop
-from logging import getLogger, Logger, getLogger
+from logging import getLogger, Logger
 from os import path
 from ssl import SSLContext, PROTOCOL_TLS_SERVER
 from time import time
@@ -36,7 +36,7 @@ class WebsocketController:
     workdir: str
     logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('WEBSOCKETCTLR')
+        self.logger = getLogger(self.__class__.__name__)
         self.addr = kwargs.get('addr') or 'localhost'
         self.ports = []
         self.servers = []
@@ -118,24 +118,20 @@ class WebsocketController:
                                     # 未提取到 JSON 结构，放弃提取
                                     if not match: continue
                                     info = json.loads(match[0])
-                                    # style = img2img_mgr.find_style(content)
-                                    # if not style:
-                                    #     reply = ['【系统提示】非常抱歉，暂不支持该风格，请重新选择！']
-                                    #     reply += img2img_mgr.get_style_list(type='web')
-                                    #     reply += ['想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
-                                    #     reply += ['要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
-                                    #     await self.send_as_role(ws, result='success', role='system', content='\n'.join(reply))
-                                    #     continue
                                     self.logger.info('用户 %s 输入提示：%s', openid, content)
-                                    style = info.get('style')
-                                    if not style:
-                                        style = 'MJ风格'
-                                    else:
+                                    # 生成模式
+                                    mode = info.get('mode', '').strip().lower()
+                                    info['mode'] = mode
+                                    # 风格
+                                    style = info.get('style', '').strip()
+                                    if style != 'MJ风格':
                                         style = style.replace('风格', '')
-                                    info['prompt'] = info.get('prompt', '').replace(style, '')
-                                    info['negative_prompts'] = info.get('negative_prompts', '').replace(style, '')
-                                    img2img_mgr.add_user_image_info(openid, style=style, prompt=info['prompt'], negative_prompts=info['negative_prompts'], controlnet_task=info['preprocessor'])
-                                    await self.process_img2img(ws, openid, prompt=content)
+                                    # 提示
+                                    prompt = info.get('prompt', '').replace(style, '').strip()
+                                    # 负向提示
+                                    negative_prompts = info.get('negative_prompts', '').replace(style, '').strip()
+                                    img2img_mgr.add_user_image_info(openid, controlnet_task=mode, style=style, prompt=prompt, negative_prompts=negative_prompts)
+                                    await self.process_img2img(ws, openid, input=content)
                                 except Exception as e:
                                     self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
                                     reply = 'error-raised'
@@ -168,7 +164,7 @@ class WebsocketController:
             start_port += 1
 
     def run(self, server_no, port):
-        logger = getLogger(f'WEBSOCKETSERVER[#{server_no}]')
+        logger = getLogger(f'WebsocketServer#{server_no}')
         set_event_loop(new_event_loop())
         coro_serve = websockets.serve(
             lambda ws, path: self.make_route(logger)(ws, path),
@@ -250,7 +246,7 @@ class WebsocketController:
                 await self.send_as_role(ws, result='success', role='assistant', content=packet)
                 packet = ''
             # 记录对话内容
-            user_mgr.add_message(openid, make_message('assistant', assistant_reply))
+            user_mgr.add_message(openid, user_message, make_message('assistant', assistant_reply))
             user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
             reply = '<EOF>'
             await self.send_as_role(ws, result='success', role='system', content=reply)
@@ -266,36 +262,40 @@ class WebsocketController:
 
     async def process_img2img_request(self, ws, openid, **kwargs):
         self.logger.info('用户 %s 进入图生图模式', openid)
-        reply = ['【系统提示】欢迎体验以图生图！完成以下 3 个步骤即可让 AI 画出您想要的图！（每成功转换 1 次将消耗 1 个图片生成额度）']
-        reply += ['1️⃣请选择图片预处理方式：']
-        reply += ['❇️' + task for task in img2img_mgr.get_controlnet_task_list(type='web')]
-        reply += ['2️⃣请选择您想要转换成的风格：']
-        reply += img2img_mgr.get_style_list(type='web')
-        reply += ['3️⃣请在输入框继续输入您希望生成的内容，或者<a href=\'#\' data-message=\'@append-prompt:$img2img-prompt\'>点击这里</a>随机生成一个提示']
-        reply += ['❓想要获得提示灵感，<a href=\'#\' data-message=\'图生图提示举例\'>点击这里</a>']
-        reply += ['ℹ️要返回对话模式，发送<a href=\'#\' data-message=\'结束\'>结束</a>即可']
         filename = kwargs.get('filename')
-        prompt = kwargs.get('prompt')
-        style = kwargs.get('style')
         if filename:
             img_path = path.abspath(path.join(DIR_IMAGES_UPLOAD, filename))
             info = img2img_mgr.get_user_image_info(openid)
             if info and len(info['img_path']) >= MAX_UPLOAD_IMAGES:
-                img2img_mgr.unregister_user(openid)
-                reply.insert(1, '已切换新上传的原图！')
-        await self.send_as_role(ws, result='success', role='system', content='\n'.join(reply))
-        img2img_mgr.add_user_image_info(openid, img_path=img_path, prompt=prompt, style=style)
+                img2img_mgr.clear_user_images(openid)
+                reply = '【系统提示】已切换新的原图！'
+                await self.send_as_role(ws, result='success', role='system', content=reply)
+        reply = img2img_mgr.get_guide() % (
+            '\n'.join(['❇️' + task for task in img2img_mgr.get_controlnet_task_list(type='web')]),
+            '\n'.join(img2img_mgr.get_style_list(type='web')),
+            """<a href="#" data-message="@append-prompt:$img2img-prompt">点击这里</a>随机生成一个提示""",
+            """<a href="#" data-message="图生图提示举例">点击这里</a>""",
+            """<a href="#" data-message="结束">结束</a>"""
+        )
+        await self.send_as_role(ws, result='success', role='system', content=reply)
+        reply = img2img_mgr.get_guide_examples()
+        await self.send_as_role(ws, result='success', role='system', content=reply)
+        img2img_mgr.add_user_image_info(openid, img_path=img_path)
         user_mgr.set_img2img_mode(openid, True)
         await self.process_img2img(ws, openid)
 
-    async def process_img2img(self, ws, openid, prompt=''):
+    async def process_img2img(self, ws, openid, input=''):
         """
         处理图生图指令
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
             if not await self.check_remaining_credit(ws, openid, COMMAND_IMAGE): return
-            if not img2img_mgr.check_img2img_valid(openid): return
+            if not img2img_mgr.check_img2img_valid(openid):
+                info = img2img_mgr.get_user_image_info(openid)
+                reply = autoreply_mgr.get('Img2ImgStatus') % (info.get('controlnet_task') or '<请指定>', info.get('style') or '<请指定>', info.get('prompt') or '<未指定>', info.get('negative_prompts') or '<未指定>')
+                await self.send_as_role(ws, result='success', role='system', content=reply)
+                return
             if user_mgr.get_pending(openid):
                 reply = 'wait-finish'
                 await self.send_as_role(ws, result='fail', role='system', content=reply)
@@ -313,8 +313,14 @@ class WebsocketController:
             await self.send_as_role(ws, result='fail', role='system', content=reply)
         user_mgr.set_pending(openid, False)
         if await self.check_remaining_credit(ws, openid, COMMAND_IMAGE):
-            style = img2img_mgr.get_user_image_info(openid)['style']
-            reply = f'【系统提示】AI 已为您将图片转变为【{style}】的效果。如果想再画一张，请<a href=\'#\' data-message=\'{web.urlquote(prompt)}\'>点击这里</a>。<a href=\'#\' data-message=\'结束\'>返回对话模式</a>'
+            info = img2img_mgr.get_user_image_info(openid)
+            reply = autoreply_mgr.get('Img2ImgSuccess') % (
+                info.get('controlnet_task'),
+                info.get('style'),
+                info.get('prompt') or '<未指定>',
+                info.get('negative_prompts') or '<未指定>',
+                f"""<a href='#' data-message='{web.urlquote(input)}'>点击这里</a>""",
+                """<a href='#' data-message='结束'>返回对话模式</a>""")
             await self.send_as_role(ws, result='success', role='system', content=reply)
     
     async def check_remaining_credit(self, ws, openid, credit_type, wait_before_remind=True):

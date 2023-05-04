@@ -50,9 +50,9 @@ class PaymentManager(metaclass=Singleton):
     workdir: str
     wxpay = None
     wxpay_config: dict
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('PAYMENTMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.pay_qrcode_template_file_path = path.join(DIR_IMAGES_TEMPLATE, 'pay-qrcode-template.jpg')
         self.pay_info_file_path = path.abspath(path.join(DIR_USERS, 'pay-info.yaml'))
         self.levels = kwargs['levels']

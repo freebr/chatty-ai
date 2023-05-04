@@ -8,10 +8,10 @@ from manager.user_manager import UserManager
 class UserMonitor(metaclass=Singleton):
     last_day: str
     user_mgr: UserManager
-    logger: Logger = None
+    logger: Logger
 
     def __init__(self, **kwargs):
-        self.logger = getLogger('USERMON')
+        self.logger = getLogger(self.__class__.__name__)
         self.last_day = localtime().tm_mday
         self.user_mgr = kwargs['user_mgr']
 

@@ -2,8 +2,8 @@
 self-ask 框架提示增强模块
 """
 from manager.feature_manager import FeatureManager
-from service.feature.utils.search_engine import SearchEngineAgent
-from logging import getLogger, Logger, getLogger
+from service.feature.utils.search_engine import SearchEngine
+from logging import getLogger, Logger
 from os import path
 from time import strftime
 import datetime
@@ -31,12 +31,12 @@ class SelfAskPromptGenerator:
     feature_mgr: FeatureManager
     prompt_file_path: str = path.join(DIR_DATA, 'prompt.txt')
     guidance_prompt: str
-    search_agent: SearchEngineAgent
-    logger: Logger = None
+    search_agent: SearchEngine
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = kwargs['logger']
         self.feature_mgr = FeatureManager(logger=self.logger)
-        self.search_agent = SearchEngineAgent(logger=getLogger('SEARCHENGINEAGENT'))
+        self.search_agent = SearchEngine(logger=getLogger(self.__class__.__name__))
         self.load_guidance_prompt()
 
     def load_guidance_prompt(self):

@@ -1,10 +1,11 @@
 import os
 import yaml
 from dataclasses import dataclass, field
-from definition.cls import Singleton
-from definition.const import DIR_CONFIG
 from logging import getLogger, Logger
 from typing import Dict
+
+from definition.cls import Singleton
+from definition.const import DIR_CONFIG
 
 @dataclass
 class ConfigData:
@@ -16,6 +17,7 @@ class ConfigData:
     databases: Dict[str, dict] = field(default_factory=dict)
     features: Dict[str, any] = field(default_factory=dict)
     levels: Dict[str, any] = field(default_factory=dict)
+    prices: Dict[str, any] = field(default_factory=dict)
     wxpay: Dict[str, str] = field(default_factory=dict)
 
 CONFIG_MAPPING = {
@@ -27,18 +29,19 @@ CONFIG_MAPPING = {
     'Databases': 'databases',
     'Features': 'features',
     'Levels': 'levels',
+    'Prices': 'prices',
     'WxPay': 'wxpay',
 }
 
 class Config(metaclass=Singleton):
     config_file: str
     data: ConfigData
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         """
-        初始化配置类
+        配置类
         """
-        self.logger = getLogger('CONFIG')
+        self.logger = getLogger(self.__class__.__name__)
         self.config_file = kwargs.get('config_file', os.path.join(DIR_CONFIG, 'config.yaml'))
         self.load()
 

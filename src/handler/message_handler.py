@@ -1,13 +1,14 @@
-from definition.const import DIR_DATA
 from logging import getLogger, Logger
 from os import listdir, path
+
+from definition.const import DIR_DATA
 
 class MessageHandler:
     file_dir: str = path.join(DIR_DATA, 'sensitive-words')
     words: list = []
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger(self.__class__.__name__)
         self.read_sensitive_words()
         
     def read_sensitive_words(self):

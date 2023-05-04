@@ -6,19 +6,21 @@ from logging import getLogger, Logger
 from os import path, mkdir
 from time import time
 
+from configure import Config
 from definition.cls import Singleton
 from definition.const import DIR_IMAGES_IMG2IMG
 from manager.key_token_manager import KeyTokenManager
 
 URL_API_BASE = 'https://flagopen.baai.ac.cn/flagStudio'
-DISPLAY_STYLE_COUNT_WECHAT = 20
+DISPLAY_STYLE_COUNT_WECHAT = 30
+cfg = Config()
 key_token_mgr = KeyTokenManager()
 class Img2ImgManager(metaclass=Singleton):
     api_keys: list
     workdir: str
     users: dict
     style_dict: dict
-    logger: Logger = None
+    logger: Logger
     DEFAULT_PARAMS = {
         'controlnet_task': 'canny-from-image',
         'style': None,
@@ -29,7 +31,7 @@ class Img2ImgManager(metaclass=Singleton):
         'height': 768,
     }
     def __init__(self, **kwargs):
-        self.logger = getLogger('IMG2IMGMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.api_keys = key_token_mgr.api_keys.get('Img2Img')
         self.style_dict = { key: {'used_count': 0} for key in STYLE_LIST }
         self.users = {}
@@ -76,10 +78,12 @@ class Img2ImgManager(metaclass=Singleton):
 
     def clear_user_images(self, name):
         """
-        记录指定用户上传的图片地址
+        清除指定用户上传的图片信息
         """
         if name not in self.users: self.register_user(name)
         self.users[name]['img_path'].clear()
+        for key in ['controlnet_task', 'negative_prompts', 'prompt', 'style']:
+            self.users[name][key] = None
         return True
 
     def check_img2img_valid(self, name):
@@ -215,17 +219,14 @@ class Img2ImgManager(metaclass=Singleton):
             if counter == DISPLAY_STYLE_COUNT_WECHAT and type == 'wechat': break
         return ret
 
+    def get_guide(self):
+        return cfg.data.autoreplies['Img2ImgGuide']
+
+    def get_guide_examples(self):
+        return cfg.data.autoreplies['Img2ImgGuideExample']
+
     def get_prompt_examples(self):
-        ret = [
-            '图片生成提示举例：',
-            '✅预处理 canny, 风格 动漫, 提示 猫娘 少女 浪漫',
-            '✅预处理 hed, 风格 国画, 提示 山水 田园 复古',
-            '✅预处理 pose, 风格 赛博朋克, 提示 失落 文明 废墟',
-            'ℹ️使提示词更强：用 () 括起元素',
-            'ℹ️使提示词更弱：用 [] 括起元素',
-            'ℹ️元素后加一个数值表示强调倍数，数值越大该元素越强化，如：春天(1.5)/笑脸(1.9)/星空(2.5)',
-        ]
-        return ret
+        return cfg.data.autoreplies['Img2ImgExample']
 
     def find_style(self, message: str):
         for key in STYLE_LIST:
@@ -255,14 +256,14 @@ STYLE_LIST = [
     '米开朗基罗',
     '新海诚',
     '版绘',
+    '水彩画',
+    '儿童画',
     '低聚',
     '工业霓虹',
     '电影艺术',
     '史诗大片',
     '特写',
-    '儿童画',
     '油画',
-    '水彩画',
     '卡通画',
     '浮世绘',
     '赛博朋克',
@@ -320,12 +321,12 @@ STYLE_LIST = [
 ]
 
 CONTROLNET_TASK_LIST = {
-    'canny': 'Canny：能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
-    'depth': '深度检测：可使出图保持与原图一致的纵深关系',
-    'hed': 'HED：更好保留柔和边缘细节，适合重新着色和风格化',
-    'mlsd': 'MLSD：适合出建筑设计效果图',
-    'normal': '法线贴图：光影处理效果好，适合CG、游戏美术设计',
-    'pose': '骨骼姿势：适合人物形象转换',
-    'scribble': '涂鸦标注：可由简笔画生成效果图',
-    'seg': '语义分割：可由一系列色块生成效果图',
+    'canny': 'canny：能很好识别出图像内各对象的边缘轮廓（如线稿），适合原画设计师',
+    'depth': 'depth：可使出图保持与原图一致的纵深关系',
+    'hed': 'hed：更好保留柔和边缘细节，适合重新着色和风格化',
+    'mlsd': 'mlsd：适合出建筑设计效果图',
+    'normal': 'normal：光影处理效果好，适合CG、游戏美术设计',
+    'pose': 'pose：适合人物形象转换',
+    'scribble': 'scribble：可由简笔画生成效果图',
+    'seg': 'seg：可由一系列色块生成效果图',
 }

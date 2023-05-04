@@ -3,9 +3,9 @@ from os import path
 import subprocess
 
 class WaveHandler:
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('WAVEMGR')
+        self.logger = getLogger(self.__class__.__name__)
 
     def wave2amr(self, wave_path, output_filepath=None):
         wave_dir, name = path.split(wave_path)

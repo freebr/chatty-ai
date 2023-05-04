@@ -40,10 +40,10 @@ class UserManager(metaclass=Singleton):
     top_level: str
     # VIP 用户记录文件
     vip_file_path = path.join(DIR_USERS, 'vip-list.json')
-    logger: Logger = None
+    logger: Logger
 
     def __init__(self, **kwargs):
-        self.logger = getLogger('USERMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.users = {}
         self.vip_levels = kwargs['vip_levels']
         self.vip_prices = {}

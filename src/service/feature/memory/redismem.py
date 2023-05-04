@@ -31,12 +31,12 @@ class RedisMemory(MemoryProviderSingleton):
     db: redis.Redis
     redis_config: dict
     index_name: str
-    logger: Logger = None
+    logger: Logger
     def __init__(self, cfg: Config):
         """
         初始化 Redis 记忆服务
         """
-        self.logger = getLogger('REDISMEM')
+        self.logger = getLogger(self.__class__.__name__)
         redis_config = cfg.data.databases['Redis']
         self.index_name = redis_config.get('IndexName')
 

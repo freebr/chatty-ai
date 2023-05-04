@@ -8,9 +8,9 @@ class ArticleManager(metaclass=Singleton):
     article_media_ids: dict
     article_urls: dict
     cover_urls: dict
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('ARTICLEMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.load()
         
     def load(self):

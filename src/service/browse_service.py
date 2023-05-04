@@ -9,7 +9,7 @@ from definition.cls import Singleton
 
 cfg = Config()
 class BrowseService(metaclass=Singleton):
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("BROWSESERVICE")
         self.semantic_parse = kwargs['semantic_parse']

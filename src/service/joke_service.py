@@ -7,7 +7,7 @@ from definition.cls import Singleton
 class JokeService(metaclass=Singleton):
     api_key = {}
     semantic_parse: any
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("JOKESERVICE")
         self.api_key = kwargs['api_key']

@@ -1,14 +1,15 @@
-from definition.const import ALLOWED_FILES, DIR_STATIC
-import logging
 import mimetypes
 import os
 import re
 import web
+from logging import getLogger, Logger
+
+from definition.const import ALLOWED_FILES, DIR_STATIC
 
 class StaticController:
-    logger = None
+    logger: Logger
     def __init__(self):
-        self.logger = logging.getLogger('STATICCTLR')
+        self.logger = getLogger(self.__class__.__name__)
     
     def try_request_file(self, req_path: str):
         query = web.changequery()[len(req_path):]

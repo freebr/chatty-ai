@@ -14,7 +14,7 @@ from definition.cls import Singleton
 
 cfg = Config()
 class WeatherService(metaclass=Singleton):
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("WEATHERSERVICE")
         self.api_key = kwargs['api_key']
@@ -52,7 +52,7 @@ class WeatherService(metaclass=Singleton):
 
 class WeatherServiceAmap:
     api_key = {}
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("WEATHERSERVICEAMAP")
         self.api_key = kwargs['api_key']

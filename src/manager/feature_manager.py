@@ -7,10 +7,10 @@ cfg = Config()
 class FeatureManager(metaclass=Singleton):
     # 等级特性字典
     features: dict
-    logger: Logger = None
+    logger: Logger
 
     def __init__(self, **kwargs):
-        self.logger = getLogger('FEATUREMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.load()
 
     def load(self):

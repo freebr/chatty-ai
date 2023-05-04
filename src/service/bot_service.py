@@ -4,25 +4,24 @@ import time
 import traceback
 import uuid
 from importlib import import_module
-from logging import getLogger, Logger, getLogger
+from logging import getLogger, Logger
 from os import path
 from revChatGPT.V1 import Chatbot
 
 from .feature.utils.json_parser import parse_json
 from .feature.memory import get_memory
 from .feature.memory.base import MemoryProviderSingleton
-from .feature.utils.command import execute_command
+from .feature.utils.command_executor import CommandExecutor
 from configure import Config
 from definition.cls import Singleton
 from definition.const import \
     DIR_CONFIG, COUNT_RECENT_MESSAGES_TO_TAKE_IN, COUNT_RELEVANT_MEMORY_TO_TAKE_IN,\
     MODEL_CHAT, MODEL_MODERATION, MODEL_TEXT_COMPLETION,\
-    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY, REGEXP_IMAGE, REGEXP_SORRY
-from handler.message_handler import MessageHandler
+    MAX_TOKEN_CONTEXT, MAX_TOKEN_OUTPUT, MAX_TOKEN_CONTEXT_WITHOUT_HISTORY, REGEXP_TEXT_IMAGE_CREATED, REGEXP_TEXT_SORRY
+from handler import msg_handler
 from helper.formatter import format_messages, make_message
 from helper.token_counter import count_message_tokens, count_string_tokens
-from manager.key_token_manager import KeyTokenManager
-from manager.user_manager import UserManager
+from manager import key_token_mgr, user_mgr
 
 URL_OPENAI_API_BASE = 'https://api.openai.com'
 MAX_API_INVOKE_COUNT = {
@@ -37,8 +36,7 @@ MIN_MESSAGE_HANDLE_LENGTH = 80
 
 getLogger("openai").disabled = True
 cfg = Config()
-key_token_mgr = KeyTokenManager()
-user_mgr = UserManager()
+cmd_executor = CommandExecutor()
 class BotService(metaclass=Singleton):
     chat_param: dict = {
         'temperature': 0.7,
@@ -48,19 +46,15 @@ class BotService(metaclass=Singleton):
     chatbots: dict = {}
     key_tokens: dict = {}
     memory: MemoryProviderSingleton
-    msg_handler: MessageHandler
     prompt_files = {
         'free': path.join(DIR_CONFIG, 'prompt-free.txt'),
         'vip': path.join(DIR_CONFIG, 'prompt-vip.txt'),
     }
     preamble_prompt: dict = {}
     services: dict = {}
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('BOT')
-        self.msg_handler = MessageHandler(
-            logger=self.logger,
-        )
+        self.logger = getLogger(self.__class__.__name__)
         self.load_preamble()
         self.update_access_tokens(key_token_mgr.access_tokens.get('Services'))
         self.update_api_keys(key_token_mgr.api_keys.get('Services'))
@@ -249,7 +243,7 @@ class BotService(metaclass=Singleton):
         """
         api_key = self.begin_invoke('api_key')
         # 过滤敏感词
-        user_input = self.msg_handler.filter_sensitive(user_input)
+        user_input = msg_handler.filter_sensitive(user_input)
         # 内容审查
         moderated, category = self.moderate(user, user_input, api_key)
         if not moderated:
@@ -314,7 +308,7 @@ class BotService(metaclass=Singleton):
                     if type(cmds) == dict: cmds = [cmds]
                     for cmd in cmds:
                         # 执行命令
-                        command_name, command_result = execute_command(cmd['command'], user, self.services)
+                        command_name, command_result = cmd_executor.exec(cmd['command'], user, self.services)
                         if command_name == '非数学绘画':
                             if command_result == 'no-credit':
                                 answer = True
@@ -396,20 +390,20 @@ class BotService(metaclass=Singleton):
                             if '"command":' not in whole_message: task_complete_cmd = True
                         if task_complete_cmd:
                             if len(whole_message) < MIN_MESSAGE_HANDLE_LENGTH: continue
-                            message, last_pos, code_mode = self.msg_handler.extract_message(
+                            message, last_pos, code_mode = msg_handler.extract_message(
                                 text=whole_message[last_pos:],
                                 offset=last_pos,
                                 min_len=MIN_MESSAGE_HANDLE_LENGTH,
                                 code_mode=code_mode,
                             )
                             if len(message) == 0: continue
-                            message = self.msg_handler.filter_sensitive(message)
+                            message = msg_handler.filter_sensitive(message)
                             yield message
                     if last_pos == 0:
-                        message = self.msg_handler.filter_sensitive(whole_message)
+                        message = msg_handler.filter_sensitive(whole_message)
                         yield message
                     elif last_pos < len(whole_message):
-                        message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
+                        message = msg_handler.filter_sensitive(whole_message[last_pos:])
                         yield message
                 response_time = time.time() - start
                 self.logger.info('响应时间：%ds', response_time)
@@ -474,20 +468,20 @@ class BotService(metaclass=Singleton):
                         whole_message = data['message']
                         response = whole_message[last_pos:]
                         if len(response) < MIN_MESSAGE_HANDLE_LENGTH: continue
-                        message, last_pos, code_mode = self.msg_handler.extract_message(
+                        message, last_pos, code_mode = msg_handler.extract_message(
                             text=response,
                             offset=last_pos,
                             min_len=MIN_MESSAGE_HANDLE_LENGTH,
                             code_mode=code_mode,
                         )
                         if len(message) == 0: continue
-                        message = self.msg_handler.filter_sensitive(message)
+                        message = msg_handler.filter_sensitive(message)
                         yield message
                     if last_pos == 0:
-                        message = self.msg_handler.filter_sensitive(response)
+                        message = msg_handler.filter_sensitive(response)
                         yield message
                     elif last_pos < len(whole_message):
-                        message = self.msg_handler.filter_sensitive(whole_message[last_pos:])
+                        message = msg_handler.filter_sensitive(whole_message[last_pos:])
                         yield message
                 self.end_invoke('access_token', access_token)
                 user['conversation_id'] = conversation_id
@@ -515,9 +509,9 @@ class BotService(metaclass=Singleton):
         api_key = self.begin_invoke('api_key')
         prompt = ''
         if system_prompt:
-            prompt += self.msg_handler.filter_sensitive(system_prompt) + ':'
+            prompt += msg_handler.filter_sensitive(system_prompt) + ':'
         if content:
-            prompt += self.msg_handler.filter_sensitive(content)
+            prompt += msg_handler.filter_sensitive(content)
         tokens_prompt = count_string_tokens(prompt, MODEL_TEXT_COMPLETION)
         while attempt_num < MAX_OPENAI_SINGLE_ATTEMPT_NUM:
             try:
@@ -566,6 +560,6 @@ class BotService(metaclass=Singleton):
         return True
 
     def save_to_memory(self, content: str):
-        if re.search(REGEXP_SORRY, content, re.I): return
-        if re.search(REGEXP_IMAGE, content, re.I): return
+        if re.search(REGEXP_TEXT_IMAGE_CREATED, content, re.I): return
+        if re.search(REGEXP_TEXT_SORRY, content, re.I): return
         self.memory.add(content)

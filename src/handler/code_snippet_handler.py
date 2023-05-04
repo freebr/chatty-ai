@@ -5,9 +5,9 @@ import re
 
 class CodeSnippetHandler:
     lz: LZString
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('CODEMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.lz = LZString()
 
     def process_snippet(self, code):

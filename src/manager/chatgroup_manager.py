@@ -7,9 +7,9 @@ cfg = Config()
 class ChatgroupManager(metaclass=Singleton):
     chatgroups: dict
     qrcodes: list
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('CHATGROUPMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.load()
         
     def load(self):

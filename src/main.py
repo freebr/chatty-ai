@@ -27,16 +27,13 @@ if __name__ == '__main__':
         '/chatty-ai(/.*)?', 'APIController',
     )
 
-    class MyApplication(web.application):
+    class HttpApplication(web.application):
         logger: logging.Logger
         def __init__(self, **kwargs):
             super().__init__(kwargs.get('urls'), globals())
-            self.logger = logging.getLogger('APP')
+            self.logger = logging.getLogger(self.__class__.__name__)
         
         def run(self, port, *middleware):
-            setWebsocketInstanceCount(3)
-            ws = WebsocketController(addr='0.0.0.0', secure=True, workdir=DIR_CERT_WS)
-            ws.emit()
             func = self.wsgifunc(*middleware)
             self.logger.info('HTTP 服务器已启动，监听 0.0.0.0:%d...', port)
             return web.httpserver.runsimple(func, ('0.0.0.0', port))
@@ -44,5 +41,10 @@ if __name__ == '__main__':
     print('当前为开发模式' if environ['DEBUG'] == '1' else '当前为生产模式')
     port = int(environ['PORT_HTTP'])
     web.webapi.internalerror = web.debugerror
-    app = MyApplication(urls=urls)
+
+    setWebsocketInstanceCount(3)
+    ws = WebsocketController(addr='0.0.0.0', secure=True, workdir=DIR_CERT_WS)
+    ws.emit()
+
+    app = HttpApplication(urls=urls)
     app.run(port=port)

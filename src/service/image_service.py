@@ -5,7 +5,7 @@ from definition.cls import Singleton
 
 class ImageService(metaclass=Singleton):
     api_key = {}
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("IMAGESERVICE")
         self.api_key = kwargs['api_key']

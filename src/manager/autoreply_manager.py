@@ -5,9 +5,9 @@ from logging import getLogger, Logger
 cfg = Config()
 class AutoReplyManager(metaclass=Singleton):
     autoreplies: dict
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('AUTOREPLYMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.load()
     
     def load(self):

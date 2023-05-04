@@ -6,10 +6,10 @@ from logging import getLogger, Logger
 import requests.api as requests
 import web
 
-class SearchEngineAgent:
-    logger: Logger = None
+class SearchEngine:
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = kwargs['logger']
+        self.logger = getLogger(self.__class__.__name__)
         
     def get_all_answers(self, question):
         """

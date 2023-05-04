@@ -37,9 +37,9 @@ class WxJsApiManager(metaclass=Singleton):
     is_snapshotuser	是否为快照页模式虚拟账号，只有当用户是快照页模式虚拟账号时返回，值为1
     unionid	        用户统一标识（针对一个微信开放平台帐号下的应用，同一用户的 unionid 是唯一的），只有当scope为"snsapi_userinfo"时返回
     """
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('WXJSAPIMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.param_template = {
             'timestamp': self.__create_timestamp(),
             'nonceStr': self.__create_nonce_str(),

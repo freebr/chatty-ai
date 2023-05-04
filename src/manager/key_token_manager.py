@@ -6,9 +6,9 @@ cfg = Config()
 class KeyTokenManager(metaclass=Singleton):
     access_tokens: dict
     api_keys: dict
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('KEYTOKENMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.load()
         
     def load(self):

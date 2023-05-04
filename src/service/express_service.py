@@ -9,7 +9,7 @@ from definition.cls import Singleton
 
 cfg = Config()
 class ExpressService(metaclass=Singleton):
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("EXPRESSSERVICE")
 

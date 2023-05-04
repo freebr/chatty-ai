@@ -10,7 +10,7 @@ DEFAULT_CITY = '广州'
 class MovieService(metaclass=Singleton):
     api_key = {}
     semantic_parse: any
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("MOVIESERVICE")
         self.api_key = kwargs['api_key']

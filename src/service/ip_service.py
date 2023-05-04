@@ -7,7 +7,7 @@ from definition.cls import Singleton
 
 class IpService(metaclass=Singleton):
     api_key = {}
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("IPSERVICE")
         self.api_key = kwargs['api_key']

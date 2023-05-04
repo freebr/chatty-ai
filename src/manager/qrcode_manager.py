@@ -8,7 +8,7 @@ from definition.const import DIR_IMAGES_TEMPLATE
 
 class QRCodeManager(metaclass=Singleton):
     logo_file_path: str = path.join(DIR_IMAGES_TEMPLATE, 'qrcode-logo.jpg')
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = kwargs['logger']
         

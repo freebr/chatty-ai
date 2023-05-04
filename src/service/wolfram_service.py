@@ -6,7 +6,7 @@ from definition.cls import Singleton
 
 class WolframService(metaclass=Singleton):
     semantic_parse: any
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("WOLFRAMSERVICE")
 

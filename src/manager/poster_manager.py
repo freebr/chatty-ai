@@ -8,10 +8,10 @@ from definition.const import DIR_IMAGES_TEMPLATE, DIR_IMAGES_POSTER
 from manager.qrcode_manager import QRCodeManager
 
 class PosterManager(metaclass=Singleton):
-    logger: Logger = None
+    logger: Logger
     qrcode_mgr: QRCodeManager
     def __init__(self, **kwargs):
-        self.logger = getLogger('POSTERMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.qrcode_mgr = QRCodeManager(logger=self.logger)
 
     def make_poster(self, openid, nickname, headimg_path):

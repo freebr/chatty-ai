@@ -7,7 +7,7 @@ import requests.api as requests
 class ExchangeService(metaclass=Singleton):
     api_key = {}
     semantic_parse: any
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
         self.logger = getLogger("EXCHANGESERVICE")
         self.api_key = kwargs['api_key']

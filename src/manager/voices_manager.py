@@ -7,7 +7,7 @@ from time import time
 from configure import Config
 from definition.cls import Singleton
 from definition.const import DIR_TTS, TTS_ENGINE
-from handler.wave_handler import WaveHandler
+from handler import wav_handler
 
 cfg = Config()
 class VoicesManager(metaclass=Singleton):
@@ -15,19 +15,17 @@ class VoicesManager(metaclass=Singleton):
     workdir: str
     tts_executor: dict
     voices_info: dict
-    wave_handler: WaveHandler
     SPEECH_KEY = ''
     SPEECH_REGION = ''
     speech_config: SpeechConfig
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('VOICESMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.engine = TTS_ENGINE
         self.SPEECH_KEY = cfg.data.api_keys.get('AzureTTS').get('Key')
         self.SPEECH_REGION = cfg.data.api_keys.get('AzureTTS').get('Region')
         self.speech_config = SpeechConfig(subscription=self.SPEECH_KEY, region=self.SPEECH_REGION)
         self.tts_executor = {'xf-tts': 'tts/xf-tts/bin/xf-tts'}
-        self.wave_handler = WaveHandler()
         self.workdir = path.abspath(path.join(DIR_TTS, TTS_ENGINE, 'export'))
 
     def run_tts(self, text, **kwargs):
@@ -106,7 +104,7 @@ class VoicesManager(metaclass=Singleton):
         self.logger.info('语音文件已生成：%s', output_filepath)
         # 转换为 amr 格式
         convert_filepath = output_filepath + '.amr'
-        self.wave_handler.wave2amr(wave_path=output_filepath, output_filepath=convert_filepath)
+        wav_handler.wave2amr(wave_path=output_filepath, output_filepath=convert_filepath)
         return True, convert_filepath
     
     def get_voices_info(self, engine):

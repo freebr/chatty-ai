@@ -23,9 +23,9 @@ class WxAccessTokenManager(metaclass=Singleton):
     APPSECRET = ''
     stop_signal: bool
     cb_success: FunctionType
-    logger: Logger = None
+    logger: Logger
     def __init__(self, **kwargs):
-        self.logger = getLogger('WXACCESSTOKENMGR')
+        self.logger = getLogger(self.__class__.__name__)
         self.APPID = APP_PARAM['APPID']
         self.APPSECRET = APP_PARAM['APPSECRET']
 
