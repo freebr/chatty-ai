@@ -22,7 +22,7 @@ class Img2ImgManager(metaclass=Singleton):
     style_dict: dict
     logger: Logger
     DEFAULT_PARAMS = {
-        'controlnet_task': 'canny-from-image',
+        'controlnet_task': 'canny',
         'style': None,
         'prompt': None,
         'negative_prompts': None,
@@ -65,8 +65,12 @@ class Img2ImgManager(metaclass=Singleton):
         img_path = kwargs.get('img_path')
         if img_path: self.users[name]['img_path'].append(img_path)
         for key in ['controlnet_task', 'negative_prompts', 'prompt', 'style']:
-            value = kwargs.get(key) or ''
-            if value: self.users[name][key] = value
+            value = kwargs.get(key, '').strip() or ''
+            if value and value != '不变':
+                if value == '空' or value == '无':
+                    self.users[name][key] = None
+                else:
+                    self.users[name][key] = value
         return True
 
     def get_user_image_info(self, name):

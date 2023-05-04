@@ -110,8 +110,7 @@ class WebsocketController:
                                     continue
                                 try:
                                     # 通过语义理解获取用户需要的风格和给出的提示
-                                    system_prompt=SYSTEM_PROMPT_IMG2IMG
-                                    result = bot.invoke_single_completion(system_prompt=system_prompt, content=content)
+                                    result = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMG2IMG, content=content + '\nOutput:')
                                     self.logger.info(result)
                                     # 提取 JSON
                                     match = re.search(r'\{(.*)\}', result, re.S)

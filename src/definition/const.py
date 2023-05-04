@@ -70,10 +70,10 @@ CREDIT_TYPENAME_DICT = {
 }
 SYSTEM_PROMPT_IMG2IMG = """\
 Output the following JSON according to the content of <desc>:\
-{"style":"style keyword occurred in <desc>(in Chinese, empty if not occurred)",\
-"mode":"mode occurred in <desc>(empty if not occurred)",\
-"prompt":"good keywords occurred in <desc>(empty if not occurred, separated by comma)",\
-"negative_prompts":"bad keywords occurred in <desc>(empty if not occurred, separated by comma)"}\
+{"style":"style keyword occurred in <desc>(in Chinese, value is "不变" if not occurred)",\
+"mode":"mode occurred in <desc>(value is "不变" if not occurred)",\
+"prompt":"positive keywords occurred in <desc>(value is "不变" if not occurred, separated by comma)",\
+"negative_prompts":"negative keywords occurred in <desc>(value is "不变" if not occurred, separated by comma)"}\
 不要加任何注释。<desc>"""
 REGEXP_MARKDOWN_IMAGE = r'!\[[^\]]*\]\(([^\)]+)\)'
 REGEXP_TEXT_IMAGE_CREATED = r'我(已经)?为您(画|生成|绘制|绘画)了一(幅|张)图(像|片)'
