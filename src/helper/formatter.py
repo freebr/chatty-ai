@@ -1,9 +1,11 @@
 import datetime
 import web
 import json
+from numpy import Infinity
+from typing import List, Dict
+
 from .token_counter import count_message_tokens
 from definition.const import MODEL_CHAT
-from typing import List, Dict
 
 def convert_encoding(text = ''):
     """
@@ -66,3 +68,6 @@ def get_headers():
     return {
         'Content-Type': 'application/json; charset=utf-8'
     }
+
+def format_credit(credit):
+    return '无限' if credit == Infinity else credit

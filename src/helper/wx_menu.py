@@ -19,7 +19,7 @@ def get_wx_menu(article_id_upgrade, voice_menu):
     return {
         'button': [
             {
-                'name': '🟢支持我们',
+                'name': '👍🏻支持',
                 'sub_button':[
                     {
                         'type': 'click',
@@ -44,12 +44,12 @@ def get_wx_menu(article_id_upgrade, voice_menu):
                 ],
             },
             {
-                'name': '🔵语音对话',
+                'name': '🎙️语音',
                 'sub_button': voice_menu,
             },
             {
                 'type': 'click',
-                'name': '🟡AI 绘画',
+                'name': '🎨绘画',
                 'key': 'ai-draw',
             },
         ]

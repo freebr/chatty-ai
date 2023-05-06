@@ -22,7 +22,7 @@ from definition.const import \
     REGEXP_MARKDOWN_IMAGE, REGEXP_TEXT_SORRY, SYSTEM_PROMPT_IMAGINE, SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE,\
     URL_API, URL_CLASH_SERVER, URL_DEFAULT_USER, URL_DISCORD, URL_POSTER_EXPORT, URL_WEIXIN_BASE, WAIT_TIMEOUT
 from handler import code_handler, img_handler, msg_handler
-from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_headers, get_query_string, make_message, make_wx_msg_link, success_json
+from helper.formatter import convert_encoding, fail_json, format_credit, get_feature_command_string, get_headers, get_query_string, make_message, make_wx_msg_link, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
 from manager import article_mgr, autoreply_mgr, chatgroup_mgr, key_token_mgr, img2img_mgr, payment_mgr, poster_mgr, user_mgr, voices_mgr, wxjsapi_mgr
 from numpy import Infinity
@@ -642,6 +642,7 @@ class APIController:
             # 翻译提示词
             prompt = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMAGINE, content=input + '\nOutput:')
             self.logger.info('用户 %s 的作画描述转换为提示词：%s', openid, prompt)
+        self.send_message(openid, autoreply_mgr.get('AIDrawWarmlyTip'), send_as_text=True)
         # 发起请求
         url = f'{URL_DISCORD}/command'
         if variation_info:
@@ -738,10 +739,10 @@ class APIController:
         user_mgr.set_ai_draw_mode(openid, True)
         reply = autoreply_mgr.get('AIDrawGuide') % (
             user_mgr.get_vip_level(openid),
-            user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE)),
-            user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE)),
-            user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION)),
-            user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION)),
+            format_credit(user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE))),
+            format_credit(user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE))),
+            format_credit(user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION))),
+            format_credit(user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION))),
             make_wx_msg_link('结束')
         )
         self.send_message(openid, reply, send_as_text=True)
@@ -1610,8 +1611,6 @@ class APIController:
                 return self.update_features()
             case ['image', type, 'clear']:
                 return self.clear_image_files(type=type)
-            case ['init']:
-                return self.init_menu()
             case ['invoke']:
                 return self.validate_wechat_token()
             case ['media', 'list']:
@@ -1663,6 +1662,8 @@ class APIController:
                 return self.clash_set_config()
             case ['voice', 'clear']:
                 return self.clear_voice_files()
+            case ['wx', 'menu', 'init']:
+                return self.init_menu()
             case ['wx', 'jsapi', 'param']:
                 return self.get_wx_jsapi_param()
             case ['wx', 'jsapi', 'user_info']:
