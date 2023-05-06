@@ -15,14 +15,14 @@ from definition.var import is_docker
 
 DIMENSION_VECTORS = 1536
 SCHEMA = [
-    TextField("data"),
+    TextField('data'),
     VectorField(
-        "embedding",
-        "HNSW",
+        'embedding',
+        'HNSW',
         {
-            "TYPE": "FLOAT32",
-            "DIM": DIMENSION_VECTORS,
-            "DISTANCE_METRIC": "COSINE"
+            'TYPE': 'FLOAT32',
+            'DIM': DIMENSION_VECTORS,
+            'DISTANCE_METRIC': 'COSINE'
         }
     ),
 ]

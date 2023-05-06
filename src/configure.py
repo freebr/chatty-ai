@@ -14,7 +14,7 @@ class ConfigData:
     articles: Dict[str, Dict] = field(default_factory=dict)
     autoreplies: Dict[str, str] = field(default_factory=dict)
     chatgroups: Dict[str, any] = field(default_factory=dict)
-    databases: Dict[str, dict] = field(default_factory=dict)
+    databases: Dict[str, Dict] = field(default_factory=dict)
     features: Dict[str, any] = field(default_factory=dict)
     levels: Dict[str, any] = field(default_factory=dict)
     prices: Dict[str, any] = field(default_factory=dict)
@@ -34,13 +34,13 @@ CONFIG_MAPPING = {
 }
 
 class Config(metaclass=Singleton):
+    """
+    配置类
+    """
     config_file: str
     data: ConfigData
     logger: Logger
     def __init__(self, **kwargs):
-        """
-        配置类
-        """
         self.logger = getLogger(self.__class__.__name__)
         self.config_file = kwargs.get('config_file', os.path.join(DIR_CONFIG, 'config.yaml'))
         self.load()

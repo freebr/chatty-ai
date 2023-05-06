@@ -21,8 +21,7 @@ if __name__ == '__main__':
     from controller.api_controller import APIController
     from controller.websocket_controller import WebsocketController
     import web
-
-if __name__ == '__main__':
+    
     urls = (
         '/chatty-ai(/.*)?', 'APIController',
     )

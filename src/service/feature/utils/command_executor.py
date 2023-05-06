@@ -1,9 +1,9 @@
 from logging import getLogger, Logger
 
-from .search_google import google_search
 from definition.cls import Singleton
 from helper.formatter import get_feature_command_string
 from manager import user_mgr
+from service.search_google import google_search
 
 class CommandExecutor(metaclass=Singleton):
     logger: Logger

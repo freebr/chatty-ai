@@ -37,7 +37,10 @@ class APIController:
         set_event_loop(new_event_loop())
     
     def index(self):
-        with open(os.path.join(DIR_STATIC, 'README.md'), 'r', encoding='utf-8') as f:
+        web.header('Content-Type', 'text/html; charset=utf-8')
+        filepath = os.path.join(DIR_STATIC, 'index.html')
+        if not os.path.isfile(filepath): return web.NotFound('未找到主页文件')
+        with open(filepath, 'r', encoding='utf-8') as f:
             data = f.read()
         return data
     

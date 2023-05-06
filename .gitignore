@@ -3,10 +3,8 @@ config
 description
 hooks/
 info/
-.deploy
-__pycache__
+**/__pycache__
 !config/
 logs/*
 docs
-venv
 *.log

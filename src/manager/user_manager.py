@@ -549,7 +549,7 @@ class UserManager(metaclass=Singleton):
 
     def dump_user(self, openid):
         """
-        转储指定用户信息到 Redis
+        转储指定用户信息到数据库
         """
         if openid not in self.users: return False
         user = {}
@@ -564,7 +564,7 @@ class UserManager(metaclass=Singleton):
 
     def dump_all_users(self):
         """
-        转储全部用户信息到 Redis
+        转储全部用户信息到数据库
         """
         for openid in self.users:
             ret = self.dump_user(openid)
@@ -574,7 +574,7 @@ class UserManager(metaclass=Singleton):
 
     def load_user(self, openid):
         """
-        从 Redis 加载指定用户信息
+        从数据库加载指定用户信息
         """
         data = self.db.get(KEY_USER_INFO % openid)
         if data is None: return False
@@ -591,7 +591,7 @@ class UserManager(metaclass=Singleton):
 
     def load_all_users(self):
         """
-        从 Redis 加载全部用户信息
+        从数据库加载全部用户信息
         """
         openids = self.db.hkeys(KEY_USER_OPENID)
         for openid in openids:

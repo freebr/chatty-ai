@@ -29,7 +29,7 @@ chmod +x tts/xf-tts/bin/xf-tts tts/xf-tts/bin/ffmpeg
 
 echo "准备日志目录..."
 mkdir logs >/dev/null 2>&1
-echo>logs/server.log
+echo>logs/*.log
 
 echo "运行 supervisord, supervisorctl..."
 # dir_deploy=.deploy
