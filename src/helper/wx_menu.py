@@ -49,8 +49,8 @@ def get_wx_menu(article_id_upgrade, voice_menu):
             },
             {
                 'type': 'click',
-                'name': '🟡看点',
-                'key': 'see-ad',
+                'name': '🟡AI 绘画',
+                'key': 'ai-draw',
             },
         ]
     }

@@ -21,7 +21,7 @@ from definition.const import \
 from handler import msg_handler
 from helper.formatter import format_messages, make_message
 from helper.token_counter import count_message_tokens, count_string_tokens
-from manager import key_token_mgr, user_mgr
+from manager import autoreply_mgr, key_token_mgr, user_mgr
 
 URL_OPENAI_API_BASE = 'https://api.openai.com'
 MAX_API_INVOKE_COUNT = {
@@ -149,25 +149,30 @@ class BotService(metaclass=Singleton):
         invoke_count = invoke_count - 1 if invoke_count > 0 else 0
         keys[value]['invoke_count'] = invoke_count
 
-    def moderate(self, user, content, api_key):
+    def moderate(self, user, content, api_key=None):
         # 内容审查
         openid = user.get('openid', 'default')
         try:
+            new_api_key = api_key if api_key else self.begin_invoke('api_key')
             response = openai.Moderation.create(
                 model=MODEL_MODERATION,
                 input=content,
-                api_key=api_key,
+                api_key=new_api_key,
             )
             categories: dict = response['results'][0]['categories']
             excluded_categories = ['self-harm']
+            result = True, None
             for category, value in categories.items():
                 if value and category not in excluded_categories:
-                    self.logger.warn('用户 %s 输入的内容被审查分类为[%s]，已拒绝回复', openid, category)
-                    return False, category
-            return True, None
+                    self.logger.warn('用户 %s 输入的内容被审查分类为[%s]', openid, category)
+                    result = False, category
+                    break
         except Exception as e:
             self.logger.error(e)
-            return False, 'error'
+            result = False, 'error'
+        finally:
+            if not api_key: self.end_invoke('api_key', new_api_key)
+        return result
 
     def make_system_context(self, relevant_memory, records, prompt_type, model):
         """
@@ -251,7 +256,7 @@ class BotService(metaclass=Singleton):
             if category == 'error':
                 yield make_message('assistant', '')
             else:
-                yield make_message('assistant', '抱歉，根据内容政策，对于您的提问，我不方便回答，请适当修改后再提问。')
+                yield make_message('assistant', autoreply_mgr.get('ChatModerationFailed'))
             return
         # 调用文本生成接口
         answer = False

@@ -12,7 +12,7 @@ from time import time
 from websockets_routes import Router
 
 from definition.const import \
-    COMMAND_COMPLETION, COMMAND_IMAGE, CREDIT_TYPENAME_DICT,\
+    COMMAND_COMPLETION, COMMAND_IMAGINE, CREDIT_TYPENAME_DICT,\
     DIR_IMAGES_UPLOAD, URL_IMG2IMG_EXPORT,\
     MAX_UPLOAD_IMAGES, SYSTEM_PROMPT_IMG2IMG,\
     TTS_ENGINE
@@ -288,7 +288,7 @@ class WebsocketController:
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
-            if not await self.check_remaining_credit(ws, openid, COMMAND_IMAGE): return
+            if not await self.check_remaining_credit(ws, openid, COMMAND_IMAGINE): return
             if not img2img_mgr.check_img2img_valid(openid):
                 info = img2img_mgr.get_user_image_info(openid)
                 reply = autoreply_mgr.get('Img2ImgStatus') % (info.get('controlnet_task') or '<请指定>', info.get('style') or '<请指定>', info.get('prompt') or '<未指定>', info.get('negative_prompts') or '<未指定>')
@@ -304,13 +304,13 @@ class WebsocketController:
                 img_url = path.join(URL_IMG2IMG_EXPORT, dest_name)
                 self.logger.info('图像 url：%s', img_url)
                 await self.send_as_role(ws, result='success', role='assistant', type='image', url=img_url)
-                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
+                user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE))
         except Exception as e:
             self.logger.error(e)
             reply = 'error-raised'
             await self.send_as_role(ws, result='fail', role='system', content=reply)
         user_mgr.set_pending(openid, False)
-        if await self.check_remaining_credit(ws, openid, COMMAND_IMAGE):
+        if await self.check_remaining_credit(ws, openid, COMMAND_IMAGINE):
             info = img2img_mgr.get_user_image_info(openid)
             reply = autoreply_mgr.get('Img2ImgSuccess') % (
                 info.get('controlnet_task'),

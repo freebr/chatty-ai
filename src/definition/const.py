@@ -6,6 +6,7 @@ environ['TZ'] = 'Asia/Shanghai'
 environ['PORT_HTTP'] = '7000'
 environ['URL_SITE'] = 'https://freebr.cn'
 environ['URL_API'] = path.join(environ['URL_SITE'], 'chatty-ai')
+environ['URL_DISCORD'] = path.join(environ['URL_SITE'], 'discord')
 environ['URL_H5'] = path.join(environ['URL_SITE'], 'oxf')
 
 ALLOWED_FILES = ['.htm', '.html', '.css', '.js', '.jpg', '.png', '.gif', '.txt', '.webp', '.wav', '.mp3', '.mp4', '.ico', '.ttf', '.map']
@@ -19,6 +20,7 @@ DIR_CERT_WXPAY = 'cert/wxpay'
 DIR_CLASH = '/clash'
 DIR_CONFIG = 'config'
 DIR_DATA = 'data'
+DIR_IMAGES_AI_DRAW = path.join(DIR_DATA, 'images/ai-draw')
 DIR_IMAGES_AVATAR = path.join(DIR_DATA, 'images/avatar')
 DIR_IMAGES_IMG2IMG = path.join(DIR_DATA, 'images/img2img')
 DIR_IMAGES_MARKDOWN = path.join(DIR_DATA, 'images/markdown')
@@ -32,6 +34,7 @@ DIR_TTS = path.join(DIR_DATA, 'tts')
 DIR_USERS = path.join(DIR_DATA, 'users')
 URL_CLASH_SERVER = 'http://127.0.0.1:9090'
 URL_API = environ['URL_API']
+URL_DISCORD = environ['URL_DISCORD']
 URL_H5 = environ['URL_H5']
 URL_DEFAULT_USER = path.join(URL_H5, 'template', 'default-user.png')
 URL_IMG2IMG_EXPORT = path.join(URL_H5, 'img2img')
@@ -63,10 +66,12 @@ COUNT_RECENT_MESSAGES_TO_TAKE_IN = 9
 COUNT_RELEVANT_MEMORY_TO_TAKE_IN = 10
 
 COMMAND_COMPLETION = '文本生成'
-COMMAND_IMAGE = '非数学绘画'
+COMMAND_IMAGINE = '非数学绘画'
+COMMAND_VARIATION = '垫图绘画'
 CREDIT_TYPENAME_DICT = {
     COMMAND_COMPLETION: '对话',
-    COMMAND_IMAGE: '图片生成',
+    COMMAND_IMAGINE: '图片生成',
+    COMMAND_VARIATION: '垫图绘画',
 }
 SYSTEM_PROMPT_IMG2IMG = """\
 Output the following JSON according to the content of <desc>:\
@@ -75,6 +80,8 @@ Output the following JSON according to the content of <desc>:\
 "prompt":"positive keywords occurred in <desc>(value is "不变" if not occurred, separated by comma)",\
 "negative_prompts":"negative keywords occurred in <desc>(value is "不变" if not occurred, separated by comma)"}\
 不要加任何注释。<desc>"""
+SYSTEM_PROMPT_IMAGINE = """\
+Output a Midjourney prompt in English according to the content of <desc>, do not add any comments.<desc>"""
 REGEXP_MARKDOWN_IMAGE = r'!\[[^\]]*\]\(([^\)]+)\)'
 REGEXP_TEXT_IMAGE_CREATED = r'我(已经)?为您(画|生成|绘制|绘画)了一(幅|张)图(像|片)'
 REGEXP_TEXT_SORRY = r'抱歉|对不起|sorry'

@@ -45,6 +45,10 @@ def make_message(role, content):
     if not content: return
     return {'role': role, 'content': content, '__token': count_message_tokens([{'role': role, 'content': content}], MODEL_CHAT)}
 
+def make_wx_msg_link(display_text, message=None):
+    if not message: message = display_text
+    return f"""<a href="weixin://bizmsgmenu?msgmenucontent={message}&msgmenuid=0">{display_text}</a>"""
+    
 def format_messages(messages: List[Dict[str, str]]):
     """
     为 OpenAI 接口格式化消息记录
@@ -57,3 +61,8 @@ def now():
 def get_feature_command_string(command: str):
     if not command: return
     return 'Commands.' + command
+
+def get_headers():
+    return {
+        'Content-Type': 'application/json; charset=utf-8'
+    }

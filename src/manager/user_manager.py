@@ -91,6 +91,8 @@ class UserManager(metaclass=Singleton):
             'conversation_id': None,
             'daily_data': self.get_initial_daily_data(),
             'img2img_mode': False,
+            'ai_draw_mode': False,
+            'ai_draw_variation': {},
             'invited_users': [],
             'level': level,
             'login_time': now(),
@@ -120,6 +122,8 @@ class UserManager(metaclass=Singleton):
                     'code_list': {},
                     'conversation_id': None,
                     'img2img_mode': False,
+                    'ai_draw_mode': False,
+                    'ai_draw_variation': {},
                     'parent_id': None,
                     'records': [],
                 })
@@ -162,6 +166,7 @@ class UserManager(metaclass=Singleton):
         return {
             'day_share_count': 0,
             'signup': False,
+            'see_ad': False,
             'feature_credit': {},
         }
 
@@ -252,6 +257,37 @@ class UserManager(metaclass=Singleton):
         """
         if openid not in self.users: self.register_user(openid)
         self.users[openid]['img2img_mode'] = value
+        self.dump_user(openid)
+
+    def get_ai_draw_mode(self, openid):
+        """
+        获取指定用户的 AI 作画模式
+        """
+        if openid not in self.users: return False
+        return self.users[openid]['ai_draw_mode']
+
+    def set_ai_draw_mode(self, openid, value):
+        """
+        设置指定用户的 AI 作画模式
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['ai_draw_mode'] = value
+        if not value: self.users[openid]['ai_draw_variation'] = {}
+        self.dump_user(openid)
+
+    def get_ai_draw_variation(self, openid):
+        """
+        获取指定用户的 AI 作画变换信息
+        """
+        if openid not in self.users: return False
+        return self.users[openid]['ai_draw_variation']
+
+    def set_ai_draw_variation(self, openid, value):
+        """
+        设置指定用户的 AI 作画变换信息
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['ai_draw_variation'] = value
         self.dump_user(openid)
 
     def get_voice_name(self, openid):
@@ -405,6 +441,21 @@ class UserManager(metaclass=Singleton):
         """
         if openid not in self.users: self.register_user(openid)
         self.users[openid]['daily_data']['signup'] = value
+        self.dump_user(openid)
+
+    def get_see_ad(self, openid):
+        """
+        获取指定用户的本日阅读广告标志
+        """
+        if openid not in self.users: return False
+        return self.users[openid]['daily_data']['see_ad']
+
+    def set_see_ad(self, openid, value: bool):
+        """
+        设置指定用户的本日阅读广告标志
+        """
+        if openid not in self.users: self.register_user(openid)
+        self.users[openid]['daily_data']['see_ad'] = value
         self.dump_user(openid)
 
     def is_invited_user(self, openid, invited_open_id):

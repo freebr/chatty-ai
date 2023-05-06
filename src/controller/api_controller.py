@@ -15,12 +15,14 @@ from logging import getLogger, Logger
 from configure import Config
 from definition.const import \
     DEBUG_MODE,\
-    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE, CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGE,\
-    DIR_CLASH, DIR_STATIC, DIR_TTS, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
-    REGEXP_MARKDOWN_IMAGE, REGEXP_TEXT_SORRY, SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE, URL_POSTER_EXPORT,\
-    URL_CLASH_SERVER, URL_DEFAULT_USER, URL_API, URL_WEIXIN_BASE, WAIT_TIMEOUT
+    MAX_DAY_SHARE_COUNT, MAX_UPLOAD_IMAGES, SHARE_GRANT_CREDIT_SCALE, SIGNUP_GRANT_CREDIT_SCALE,\
+    CREDIT_TYPENAME_DICT, COMMAND_COMPLETION, COMMAND_IMAGINE, COMMAND_VARIATION,\
+    DIR_CLASH, DIR_STATIC, DIR_TTS,\
+    DIR_IMAGES_AI_DRAW, DIR_IMAGES_AVATAR, DIR_IMAGES_IMG2IMG, DIR_IMAGES_MARKDOWN, DIR_IMAGES_POSTER, DIR_IMAGES_QRCODE, DIR_IMAGES_UPLOAD,\
+    REGEXP_MARKDOWN_IMAGE, REGEXP_TEXT_SORRY, SYSTEM_PROMPT_IMAGINE, SYSTEM_PROMPT_IMG2IMG, TTS_ENGINE,\
+    URL_API, URL_CLASH_SERVER, URL_DEFAULT_USER, URL_DISCORD, URL_POSTER_EXPORT, URL_WEIXIN_BASE, WAIT_TIMEOUT
 from handler import code_handler, img_handler, msg_handler
-from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_query_string, make_message, success_json
+from helper.formatter import convert_encoding, fail_json, get_feature_command_string, get_headers, get_query_string, make_message, make_wx_msg_link, success_json
 from helper.wx_menu import get_voice_menu, get_wx_menu
 from manager import article_mgr, autoreply_mgr, chatgroup_mgr, key_token_mgr, img2img_mgr, payment_mgr, poster_mgr, user_mgr, voices_mgr, wxjsapi_mgr
 from numpy import Infinity
@@ -57,7 +59,7 @@ class APIController:
                 article_id_upgrade=media_id,
                 voice_menu=get_voice_menu(voices_info, recommended_voices)),
             ensure_ascii=False).encode('utf-8'),
-            headers={ 'Content-Type': 'application/json; charset=utf-8' },
+            headers=get_headers(),
         ).json()
         return success_json(detail=ret)
 
@@ -69,13 +71,10 @@ class APIController:
         data = {
             'rid': rid,
         }
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         ret = requests.post(
             url,
             data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
+            headers=get_headers(),
         ).json()
         return json.dumps({ 'result': 'ok', 'detail': ret }, ensure_ascii=False)
 
@@ -97,13 +96,10 @@ class APIController:
             'offset': offset,
             'count': 20,
         }
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = requests.post(
             url=self.wx_api_url('freepublish/batchget'),
             data=json.dumps(data),
-            headers=headers,
+            headers=get_headers(),
         )
         ret = json.loads(convert_encoding(data.text))
         if to_dict: return ret
@@ -123,13 +119,10 @@ class APIController:
             'offset': offset,
             'count': 20,
         }
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = requests.post(
             url=self.wx_api_url('material/batchget_material'),
             data=json.dumps(data),
-            headers=headers,
+            headers=get_headers(),
         )
         ret = convert_encoding(data.text)
         if to_dict: return json.loads(ret)
@@ -219,21 +212,21 @@ class APIController:
                 img_url = data.get('PicUrl')
                 self.process_img2img_request(openid, img_url=img_url)
             case 'text' | 'voice':
-                content = data.get('Content') if message_type == 'text' else data.get('Recognition')
+                content: str = data.get('Content') if message_type == 'text' else data.get('Recognition')
                 content = content.strip()
                 if content == '结束':
                     self.logger.info('用户 %s 进入文字对话模式', openid)
-                    reply = '【系统提示】'
                     voice_name = user_mgr.get_voice_name(openid=openid)
-                    if voice_name or user_mgr.get_img2img_mode(openid):
-                        reply += '现在是文字对话模式'
+                    if voice_name or user_mgr.get_img2img_mode(openid) or user_mgr.get_ai_draw_mode(openid):
+                        reply = autoreply_mgr.get('ReturnToChatMode')
                         if voice_name:
                             user_mgr.set_voice_name(openid=openid, role=None)
                         user_mgr.set_img2img_mode(openid, False)
+                        user_mgr.set_ai_draw_mode(openid, False)
                         user_mgr.set_pending(openid, False)
                         img2img_mgr.unregister_user(openid)
                     else:
-                        reply += '记忆已清除'
+                        reply = autoreply_mgr.get('MemoryCleared')
                         user_mgr.clear_conversation(openid)
                     self.send_message(openid, reply, send_as_text=True)
                     return
@@ -270,6 +263,14 @@ class APIController:
                         self.logger.error('处理用户 %s 的图生图指令失败：%s', openid, str(e))
                         self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
                     return
+                if user_mgr.get_ai_draw_mode(openid):
+                    # AI 作画模式
+                    try:
+                        self.process_ai_draw(openid, input=content)
+                    except Exception as e:
+                        self.logger.error('处理用户 %s 的 AI 作画指令失败：%s', openid, str(e))
+                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+                    return
                 if content == '【打赏作者】':
                     self.process_donate_request(openid)
                     self.logger.info('用户 %s 点击链接“打赏作者”', openid)
@@ -277,26 +278,27 @@ class APIController:
                 # 处理文本/语音消息
                 self.logger.info('用户 %s 发送消息，长度：%s', openid, len(content))
                 reply = None
-                global COMMAND_COMPLETION, COMMAND_IMAGE
                 if msg_data_id:
                     self.logger.info('用户 %s 消息 msg_data_id：%s', openid, msg_data_id)
-                    type = None
-                    remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_COMPLETION))
-                    if remaining_credit <= 0:
-                        type = COMMAND_COMPLETION
-                        user_mgr.reset_feature_credit(openid, get_feature_command_string(type))
-                    remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
-                    if remaining_credit <= 0:
-                        type = COMMAND_IMAGE
-                        user_mgr.reset_feature_credit(openid, get_feature_command_string(type))
-                    if type:
-                        new_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(type))
-                        self.logger.info('%s 获得%s体验额度 %s 次', openid, type, new_credit)
-                        reply = f'✅【系统提示】您已获得 {new_credit} 次{CREDIT_TYPENAME_DICT[type]}体验额度，快继续体验吧~/爱心'
+                    if user_mgr.get_see_ad(openid):
+                        # 今日已阅读广告，不能再领取额度
+                        reply = autoreply_mgr.get('CreditGrantedFailed')
+                        self.send_message(openid, reply, send_as_text=True)
+                        return
+                    granted_credit = False
+                    for credit_type in CREDIT_TYPENAME_DICT.keys():
+                        remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type))
+                        if remaining_credit <= 0:
+                            user_mgr.reset_feature_credit(openid, get_feature_command_string(credit_type))
+                            granted_credit = True
+                    if granted_credit:
+                        self.logger.info('%s 获得体验额度', openid)
+                        reply = autoreply_mgr.get('CreditGrantedSuccess')
                         self.send_message(openid, reply, send_as_text=True)
                     elif content.startswith('已阅'):
-                        reply = f'✅收到您的已阅，谢谢支持！/爱心'
+                        reply = autoreply_mgr.get('AdRead')
                         self.send_message(openid, reply, send_as_text=True)
+                    user_mgr.set_see_ad(openid, True)
                     return
                 credit_typename = COMMAND_COMPLETION
                 match credit_typename:
@@ -315,7 +317,7 @@ class APIController:
                 self.send_message(openid, reply, send_as_text=True)
                 media_id = article_mgr.get_media_id('usage')
                 self.push_article_by_id(openid, media_id)
-                reply = '您好，请问有什么需要我解答的问题吗？/可爱'
+                reply = autoreply_mgr.get('Welcome')
                 self.send_message(openid, reply, send_as_text=True)
                 return
             case 'unsubscribe':
@@ -330,25 +332,29 @@ class APIController:
                 self.logger.info('用户 %s 点击菜单“讨论交流”', openid)
                 self.send_image(openid, chatgroup_mgr.shuffle_get_qrcode())
             case 'show-level':
+                self.logger.info('用户 %s 点击菜单“我的等级”', openid)
                 level = user_mgr.get_vip_level(openid)
-                reply = f'【系统提示】您目前的体验等级为【{level}】'
                 if level == user_mgr.top_level:
-                    reply += f'，{user_mgr.vip_rights[level]}/鼓掌'
+                    reply = autoreply_mgr.get('LevelDescriptionTopLevel') % (level, user_mgr.vip_rights[level])
                 else:
+                    credit_desc = []
                     for credit_type, credit_typename in CREDIT_TYPENAME_DICT.items():
                         total_credit = user_mgr.get_total_feature_credit(openid, get_feature_command_string(credit_type))
                         remaining_credit = user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type))
-                        reply += f'\n{credit_typename}赠送体验额度{total_credit}次，剩余体验额度{remaining_credit}次'
-                if level == user_mgr.free_level:
-                    reply += '\n如果觉得我们的服务不错，就请作者喝杯咖啡吧！/咖啡'
-                else:
-                    reply += '\n感谢您对我们服务的支持！/爱心'
+                        credit_desc.append(autoreply_mgr.get('LevelDescriptionCredit') % (credit_typename, total_credit, remaining_credit))
+                    if level == user_mgr.free_level:
+                        reply_end = autoreply_mgr.get('LevelDescriptionEndingFreeLevel')
+                    else:
+                        reply_end = autoreply_mgr.get('LevelDescriptionEndingVipLevel')
+                    reply = autoreply_mgr.get('LevelDescriptionNormal') % (level, '\n'.join(credit_desc), reply_end)
                 self.send_message(openid, reply, send_as_text=True)
-                self.logger.info('用户 %s 点击菜单“我的等级”', openid)
-            case 'see-ad':
-                article_url = article_mgr.shuffle_get_url('ad')
-                self.push_article_by_url(openid, article_url)
-                self.logger.info('用户 %s 点击菜单“看点”', openid)
+            case 'ai-draw':
+                self.logger.info('用户 %s 点击菜单“AI 绘画”', openid)
+                if user_mgr.get_ai_draw_mode(openid):
+                    self.send_message(openid, autoreply_mgr.get('AIDrawExit'), send_as_text=True)
+                    user_mgr.set_ai_draw_mode(openid, False)
+                else:
+                    self.process_ai_draw_mode_request(openid)
             case _:
                 if not key.startswith('voice:'): return
                 self.process_voice_mode_request(openid, key)
@@ -357,12 +363,12 @@ class APIController:
         """
         处理文本消息
         """
-        # 判断是否有剩余可用次数
+        # 判断是否有剩余额度
         if not self.check_remaining_credit(openid, COMMAND_COMPLETION): return
         # 判断是否在等待回答
         reply = ''
         if user_mgr.get_pending(openid):
-            reply = '【系统提示】请先等我回答完~'
+            reply = autoreply_mgr.get('ChatPending')
         else:
             user_message = make_message('user', prompt)
             token_prompt = user_message['__token']
@@ -378,7 +384,7 @@ class APIController:
                 # 生成回答
                 reply_result = {'is_respond': False}
                 _thread.start_new_thread(self.warmly_tip,
-                    (openid, WAIT_TIMEOUT, reply_result, '【系统提示】线路过于繁忙，可能需要较长时间，请您稍等……')
+                    (openid, WAIT_TIMEOUT, reply_result, autoreply_mgr.get('ChatWarmlyTip'))
                 )
                 last_sent_time = 0
                 voice_name = user_mgr.get_voice_name(openid)
@@ -409,9 +415,7 @@ class APIController:
                         if success:
                             # 发送图片
                             media_id = self.upload_wx_image(openid, img_name, dest_path)
-                            if media_id:
-                                self.logger.info('图像 media_id：%s', media_id)
-                                self.send_image(openid, media_id)
+                            if media_id: self.send_image(openid, media_id)
                             assistant_reply += reply
                     else:
                         self.send_message(openid, reply)
@@ -459,14 +463,14 @@ class APIController:
             info = img2img_mgr.get_user_image_info(openid)
             if info and len(info['img_path']) >= MAX_UPLOAD_IMAGES:
                 img2img_mgr.clear_user_images(openid)
-                reply = '【系统提示】已切换新的原图！'
+                reply = autoreply_mgr.get('Img2ImgNewPictureUploaded')
                 self.send_message(openid, reply, send_as_text=True)
         reply = img2img_mgr.get_guide() % (
             '\n'.join(['❇️' + task for task in img2img_mgr.get_controlnet_task_list()]),
             '\n'.join(img2img_mgr.get_style_list()),
             '',
-            """<a href="weixin://bizmsgmenu?msgmenucontent=图生图提示举例&msgmenuid=0">点击这里</a>""",
-            """<a href="weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0">结束</a>"""
+            make_wx_msg_link('点击这里', '图生图提示举例'),
+            make_wx_msg_link('结束'),
         )
         self.send_message(openid, reply, send_as_text=True)
         reply = img2img_mgr.get_guide_examples()
@@ -474,52 +478,240 @@ class APIController:
         img2img_mgr.add_user_image_info(openid, img_path=src_path)
         user_mgr.set_img2img_mode(openid, True)
 
-    def process_img2img(self, openid, input):
+    def process_img2img(self, openid: str, input: str):
         """
         处理图生图指令
         """
         try:
             self.logger.info('用户 %s 触发图生图指令', openid)
-            if not self.check_remaining_credit(openid, COMMAND_IMAGE): return
+            if not self.check_remaining_credit(openid, COMMAND_IMAGINE): return
             if not img2img_mgr.check_img2img_valid(openid):
                 info = img2img_mgr.get_user_image_info(openid)
                 reply = autoreply_mgr.get('Img2ImgStatus') % (info.get('controlnet_task') or '<请指定>', info.get('style') or '<请指定>', info.get('prompt') or '<未指定>', info.get('negative_prompts') or '<未指定>')
                 self.send_message(openid, reply, send_as_text=True)
                 return
             if user_mgr.get_pending(openid):
-                reply = '【系统提示】请先等我把画画完~'
+                reply = autoreply_mgr.get('Img2ImgPending')
                 self.send_message(openid, reply, send_as_text=True)
                 return
             user_mgr.set_pending(openid, True)
             media_id = None
             reply_result = {'is_respond': False}
             _thread.start_new_thread(self.warmly_tip,
-                (openid, WAIT_TIMEOUT, reply_result, '【系统提示】正在转换图片，请您稍等……')
+                (openid, WAIT_TIMEOUT, reply_result, autoreply_mgr.get('Img2ImgWarmlyTip'))
             )
             results = img2img_mgr.img2img(openid)
             for dest_name, dest_path in results:
                 reply_result['is_respond'] = True
                 media_id = self.upload_wx_image(openid, dest_name, dest_path)
                 if media_id:
-                    self.logger.info('图像 media_id：%s', media_id)
                     self.send_image(openid, media_id)
-                    user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGE))
+                    user_mgr.reduce_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE))
         except Exception as e:
             self.logger.error(e)
             self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
             reply_result['is_respond'] = True
         user_mgr.set_pending(openid, False)
-        if self.check_remaining_credit(openid, COMMAND_IMAGE):
+        if self.check_remaining_credit(openid, COMMAND_IMAGINE):
             info = img2img_mgr.get_user_image_info(openid)
             reply = autoreply_mgr.get('Img2ImgSuccess') % (
                 info.get('controlnet_task'),
                 info.get('style'),
                 info.get('prompt') or '<未指定>',
                 info.get('negative_prompts') or '<未指定>',
-                f"""<a href="weixin://bizmsgmenu?msgmenucontent={web.urlquote(input)}&msgmenuid=0">点击这里</a>""",
-                """<a href="weixin://bizmsgmenu?msgmenucontent=结束&msgmenuid=0">返回对话模式</a>""")
+                make_wx_msg_link('点击这里', web.urlquote(input)),
+                make_wx_msg_link('返回对话模式', '结束'))
             self.send_message(openid, reply, send_as_text=True)
     
+    def process_ai_draw(self, openid: str, input: str):
+        """
+        处理 AI 作画指令
+        """
+        if input == '退出垫图':
+            self.send_message(openid, autoreply_mgr.get('AIDrawVariationExit'), send_as_text=True)
+            return True
+        # 判断是否在等待回答
+        if user_mgr.get_pending(openid):
+            self.send_message(openid, autoreply_mgr.get('AIDrawPending'), send_as_text=True)
+            return False
+        image_positions = ['左上', '右上', '左下', '右下']
+        if input.startswith(':'):
+            # 指令
+            command = input[1:].split(':')
+            match command[0]:
+                case 'U' | 'VU':
+                    # U|VU:task_key:image_no
+                    if len(command) != 3:
+                        self.send_message(openid, autoreply_mgr.get('AIDrawCommandArgInvalid'), send_as_text=True)
+                        return False
+                    task_key = command[1]
+                    image_no = command[2]
+                    if image_no not in ['1', '2', '3', '4']:
+                        self.send_message(openid, autoreply_mgr.get('AIDrawCommandArgInvalid'), send_as_text=True)
+                        return False
+                    image_no = int(image_no)
+                    user_mgr.set_pending(openid, True)
+                    # 发起请求
+                    url = f'{URL_DISCORD}/command'
+                    data = {
+                        'command': 'upscale',
+                        'user_id': openid,
+                        'task_name': 'imagine' if command[0] == 'U' else 'variation',
+                        'task_key': task_key,
+                        'image_no': image_no,
+                    }
+                    res = requests.post(
+                        url,
+                        data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                        headers=get_headers(),
+                    )
+                    if res.status_code != 200:
+                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+                        user_mgr.set_pending(openid, False)
+                        return False
+                    result = res.json()
+                    if result['code'] != 0:
+                        self.logger.error('调用 Discord 接口时发生错误：%s', result)
+                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+                        user_mgr.set_pending(openid, False)
+                        return False
+                    task_key = result['detail']['task_key']
+                    img_url = result['detail']['url']
+                    # 下载图片
+                    img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW)
+                    # 发送图片
+                    media_id = self.upload_wx_image(openid, img_name, src_path)
+                    if not media_id:
+                        self.logger.error('上传图片失败')
+                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+                        user_mgr.set_pending(openid, False)
+                        return False
+                    self.send_image(openid, media_id)
+                    # 发送提示消息
+                    link_variation = make_wx_msg_link('这张', f':V:{task_key}:0')
+                    reply = autoreply_mgr.get('AIDrawUpscaleSuccess') % link_variation
+                    self.send_message(openid, reply, send_as_text=True)
+                    user_mgr.set_pending(openid, False)
+                    return True
+                case 'V':
+                    # V:task_key:image_no
+                    if len(command) != 3:
+                        self.send_message(openid, autoreply_mgr.get('AIDrawCommandArgInvalid'), send_as_text=True)
+                        return False
+                    task_key = command[1]
+                    image_no = command[2]
+                    if image_no not in ['0', '1', '2', '3', '4']:
+                        self.send_message(openid, autoreply_mgr.get('AIDrawCommandArgInvalid'), send_as_text=True)
+                        return False
+                    image_no = int(image_no)
+                    user_mgr.set_ai_draw_variation(openid, {
+                        'task_key': task_key,
+                        'image_no': image_no
+                    })
+                    reply = autoreply_mgr.get('AIDrawVariationEnter') % image_positions[image_no]
+                    self.send_message(openid, reply, send_as_text=True)
+                    return True
+                case _:
+                    self.send_message(openid, autoreply_mgr.get('AIDrawCommandArgInvalid'), send_as_text=True)
+                    return False
+        # 处理 imagine 或 variation 指令
+        tempstr = input.lower()
+        variation_info = user_mgr.get_ai_draw_variation(openid)
+        if variation_info:
+            command = COMMAND_VARIATION
+        else:
+            if 'http://' in tempstr or 'https://' in tempstr:
+                # 输入包含 URL，判断为垫图绘画
+                command = COMMAND_VARIATION
+            else:
+                command = COMMAND_IMAGINE
+        # 判断是否有剩余额度
+        if not self.check_remaining_credit(openid, command): return False
+        user_mgr.set_pending(openid, True)
+        # 内容审查
+        moderated, category = bot.moderate(user_mgr.users[openid], input)
+        if not moderated:
+            self.send_message(openid, autoreply_mgr.get('AIDrawModerationFailed'), send_as_text=True)
+            user_mgr.set_pending(openid, False)
+            return False
+        self.logger.info('用户 %s 输入作画描述：%s', openid, input)
+        if input.startswith('@'):
+            # 自由式
+            prompt = input[1:]
+        else:
+            # 翻译提示词
+            prompt = bot.invoke_single_completion(system_prompt=SYSTEM_PROMPT_IMAGINE, content=input + '\nOutput:')
+            self.logger.info('用户 %s 的作画描述转换为提示词：%s', openid, prompt)
+        # 发起请求
+        url = f'{URL_DISCORD}/command'
+        if variation_info:
+            data = {
+                'command': 'variation',
+                'user_id': openid,
+                'task_name': 'upscale' if variation_info['image_no'] == 0 else 'imagine',
+                'task_key': variation_info['task_key'],
+                'image_no': variation_info['image_no'],
+                'prompt': prompt,
+            }
+        else:
+            data = {
+                'command': 'imagine',
+                'user_id': openid,
+                'prompt': prompt,
+            }
+        res = requests.post(
+            url,
+            data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
+            headers=get_headers(),
+        )
+        if res.status_code != 200:
+            self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+            user_mgr.set_pending(openid, False)
+            return False
+        result = res.json()
+        if result['code'] != 0:
+            self.logger.error('调用 Discord 接口时发生错误：%s', result)
+            self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+            user_mgr.set_pending(openid, False)
+            return False
+        task_key = result['detail']['task_key']
+        img_url = result['detail']['url']
+        # 下载图片
+        img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW)
+        # 发送图片
+        media_id = self.upload_wx_image(openid, img_name, src_path)
+        if not media_id:
+            self.logger.error('上传图片失败')
+            self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
+            user_mgr.set_pending(openid, False)
+            return False
+        self.send_image(openid, media_id)
+        # 发送提示消息
+        links_upscale = [
+            make_wx_msg_link(display_text, f':U:{task_key}:{index + 1}')
+            for index, display_text in enumerate(image_positions)
+        ]
+        links_variation = [
+            make_wx_msg_link(display_text, f':U:{task_key}:{index + 1}')
+            for index, display_text in enumerate(image_positions)
+        ]
+        if variation_info:
+            reply = autoreply_mgr.get('AIDrawVariationSuccess') % (
+                '|'.join(links_upscale),
+                '|'.join(links_variation),
+                make_wx_msg_link('退出垫图')
+            )
+        else:
+            reply = autoreply_mgr.get('AIDrawImagineSuccess') % (
+                '|'.join(links_upscale),
+                '|'.join(links_variation)
+            )
+        self.send_message(openid, reply, send_as_text=True)
+        user_mgr.reduce_feature_credit(openid, get_feature_command_string(command))
+        self.check_remaining_credit(openid, command)
+        user_mgr.set_pending(openid, False)
+        return True
+
     def process_donate_request(self, openid):
         self.send_image(openid, media_id=self.get_pay_qrcode(openid))
 
@@ -531,17 +723,31 @@ class APIController:
         new_name = voice_key[6:]
         if old_name == new_name:
             user_mgr.set_voice_name(openid=openid, role=None)
-            reply = '【系统提示】现在是文字对话模式'
+            reply = autoreply_mgr.get('ReturnToChatMode')
         else:
+            self.logger.info('用户 %s 进入语音对话模式，角色：【%s】', openid, new_name)
             user_mgr.set_voice_name(openid=openid, role=new_name)
             if old_name:
-                reply = f'【系统提示】语音切换为角色：{new_name}\n要以文字回复，在菜单中再次选择该角色即可（或发送“结束”）'
+                reply = autoreply_mgr.get('VoiceChanged') % new_name
             else:
-                reply = f'【系统提示】现在是语音对话模式，AI将语音回复消息，要以文字回复，在菜单中再次选择该角色即可（或发送“结束”）。\n当前角色：{new_name}'
+                reply = autoreply_mgr.get('VoiceGuide') % new_name
+        self.send_message(openid, reply, send_as_text=True)
+
+    def process_ai_draw_mode_request(self, openid):
+        self.logger.info('用户 %s 进入 AI 作画模式', openid)
+        user_mgr.set_ai_draw_mode(openid, True)
+        reply = autoreply_mgr.get('AIDrawGuide') % (
+            user_mgr.get_vip_level(openid),
+            user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE)),
+            user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_IMAGINE)),
+            user_mgr.get_total_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION)),
+            user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(COMMAND_VARIATION)),
+            make_wx_msg_link('结束')
+        )
         self.send_message(openid, reply, send_as_text=True)
 
     def check_remaining_credit(self, openid, credit_type, wait_before_remind=True):
-        # 判断是否有剩余可用次数，如果用完则发出提示
+        # 判断是否有剩余额度，如果用完则发出提示
         if user_mgr.get_remaining_feature_credit(openid, get_feature_command_string(credit_type)) > 0: return True
         reply = self.get_credit_used_up_reply(openid, credit_type)
         if wait_before_remind: time.sleep(5)
@@ -959,13 +1165,10 @@ class APIController:
                     },
                 }
             url = self.wx_api_url('message/custom/send')
-            headers = {
-                'Content-Type': 'application/json; charset=utf-8'
-            }
             res = requests.post(
                 url,
                 data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-                headers=headers,
+                headers=get_headers(),
             ).json()
             self.logger.info('微信回复：%s', res)
         except Exception as e:
@@ -979,11 +1182,9 @@ class APIController:
         if DEBUG_MODE:
             self.logger.debug('发送图片消息，media_id=%s', media_id)
             return
+        self.logger.info('发送图像，media_id=%s', media_id)
         try:
             url = self.wx_api_url('message/custom/send')
-            headers = {
-                'Content-Type': 'application/json; charset=utf-8'
-            }
             data = {
                 'touser': openid,
                 'msgtype': 'image',
@@ -994,7 +1195,7 @@ class APIController:
             return requests.post(
                 url,
                 data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-                headers=headers,
+                headers=get_headers(),
             )
         except Exception as e:
             message = '回复图片消息到用户 {} 失败：{}'.format(openid, str(e))
@@ -1050,9 +1251,6 @@ class APIController:
         """
         if DEBUG_MODE: return
         url = self.wx_api_url('message/custom/typing')
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = {
             'touser': openid,
             'command': 'Typing' if typing else 'CancelTyping',
@@ -1060,7 +1258,7 @@ class APIController:
         return requests.post(
             url,
             data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
+            headers=get_headers(),
         )
 
     def get_pay_qrcode(self, openid):
@@ -1088,9 +1286,6 @@ class APIController:
         推送指定 id 的图文消息到指定用户
         """
         url = self.wx_api_url('message/custom/send')
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = {
             'touser': openid,
             'msgtype': 'mpnewsarticle',
@@ -1102,7 +1297,7 @@ class APIController:
         return requests.post(
             url,
             data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
+            headers=get_headers(),
         )
 
     def push_article_by_url(self, openid, article_url):
@@ -1110,9 +1305,6 @@ class APIController:
         推送指定 url 的图文消息（小型）到指定用户
         """
         url = self.wx_api_url('message/custom/send')
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = {
             'touser': openid,
             'msgtype': 'news',
@@ -1130,7 +1322,7 @@ class APIController:
         return requests.post(
             url,
             data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
+            headers=get_headers(),
         )
 
     def push_link(self, openid, title, description, link_url, cover_url):
@@ -1138,9 +1330,6 @@ class APIController:
         推送指定 url 的链接到指定用户
         """
         url = self.wx_api_url('message/custom/send')
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
         data = {
             'touser': openid,
             'msgtype': 'news',
@@ -1158,7 +1347,7 @@ class APIController:
         return requests.post(
             url,
             data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
+            headers=get_headers(),
         )
 
     def validate_wechat_token(self):
