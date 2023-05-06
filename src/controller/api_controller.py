@@ -528,6 +528,7 @@ class APIController:
         处理 AI 作画指令
         """
         if input == '退出垫图':
+            user_mgr.set_ai_draw_variation(openid, {})
             self.send_message(openid, autoreply_mgr.get('AIDrawVariationExit'), send_as_text=True)
             return True
         # 判断是否在等待回答
