@@ -81,7 +81,7 @@ Output the following JSON according to the content of <desc>:\
 "negative_prompts":"negative keywords occurred in <desc>(value is "不变" if not occurred, separated by comma)"}\
 不要加任何注释。<desc>"""
 SYSTEM_PROMPT_IMAGINE = """\
-Turn the content of <desc> to a Midjourney prompt in English, do not add any comments.<desc>"""
+Translate the content of <desc> into English, do not remove urls. do not add any comments.<desc>"""
 REGEXP_MARKDOWN_IMAGE = r'!\[[^\]]*\]\(([^\)]+)\)'
 REGEXP_TEXT_IMAGE_CREATED = r'我(已经)?为您(画|生成|绘制|绘画)了一(幅|张)图(像|片)'
 REGEXP_TEXT_SORRY = r'抱歉|对不起|sorry'
