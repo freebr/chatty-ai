@@ -300,10 +300,7 @@ class APIController:
                         self.send_message(openid, reply, send_as_text=True)
                     user_mgr.set_see_ad(openid, True)
                     return
-                credit_typename = COMMAND_COMPLETION
-                match credit_typename:
-                    case COMMAND_COMPLETION:
-                        self.process_chat(openid, content)
+                self.process_chat(openid, content)
         return
 
     def process_event(self, openid, event_type, event_key=None):
@@ -579,9 +576,13 @@ class APIController:
                     task_key = result['detail']['task_key']
                     img_url = result['detail']['url']
                     # 下载图片
-                    img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW)
+                    img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW, '.webp')
+                    # 转换图片
+                    dest_path = src_path.split('.webp')[0] + '.png'
+                    dest_img_name = img_name.split('.webp')[0] + '.png'
+                    img_handler.convert_to_png(src_path, dest_path)
                     # 发送图片
-                    media_id = self.upload_wx_image(openid, img_name, src_path)
+                    media_id = self.upload_wx_image(openid, dest_img_name, dest_path, 'image/png')
                     if not media_id:
                         self.logger.error('上传图片失败')
                         self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
@@ -589,7 +590,7 @@ class APIController:
                         return False
                     self.send_image(openid, media_id)
                     # 发送提示消息
-                    link_variation = make_wx_msg_link('这张', f':V:{task_key}:0')
+                    link_variation = make_wx_msg_link('这张图片', f':V:{task_key}:0')
                     reply = autoreply_mgr.get('AIDrawUpscaleSuccess') % link_variation
                     self.send_message(openid, reply, send_as_text=True)
                     user_mgr.set_pending(openid, False)
@@ -679,9 +680,13 @@ class APIController:
         task_key = result['detail']['task_key']
         img_url = result['detail']['url']
         # 下载图片
-        img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW)
+        img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW, '.webp')
+        # 转换图片
+        dest_path = src_path.split('.webp')[0] + '.png'
+        dest_img_name = img_name.split('.webp')[0] + '.png'
+        img_handler.convert_to_png(src_path, dest_path)
         # 发送图片
-        media_id = self.upload_wx_image(openid, img_name, src_path)
+        media_id = self.upload_wx_image(openid, dest_img_name, dest_path, 'image/png')
         if not media_id:
             self.logger.error('上传图片失败')
             self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
@@ -1203,7 +1208,7 @@ class APIController:
             message = '回复图片消息到用户 {} 失败：{}'.format(openid, str(e))
             self.logger.error(message)
 
-    def upload_wx_image(self, openid, img_name, image_path):
+    def upload_wx_image(self, openid, img_name, image_path, mime_type='image/jpg'):
         """
         上传指定图片作为临时素材
         """
@@ -1211,7 +1216,7 @@ class APIController:
             url = self.wx_api_url('media/upload', 'type=image')
             with open(image_path, 'rb') as f:
                 upload_data = {
-                    'media': (img_name, f, 'image/jpg')
+                    'media': (img_name, f, mime_type)
                 }
                 res = requests.post(
                     url,
@@ -1224,17 +1229,16 @@ class APIController:
             else:
                 raise Exception(json.dumps(res, ensure_ascii=False))
         except Exception as e:
-            message = '用户 {} 上传图片素材失败：{}'.format(openid, str(e))
-            self.logger.error(message)
-            raise Exception(message)
+            self.logger.error('用户 %s 上传图片素材失败：%s', openid, str(e))
+            return
 
-    def fetch_image(self, openid, img_url, dest_dir):
+    def fetch_image(self, openid, img_url, dest_dir, ext='.jpg'):
         """
         从指定 URL 下载图片并保存，返回文件名称和路径
         """
         try:
             res = requests.get(img_url, stream=True)
-            img_name = str(round(time.time())) + '.jpg'
+            img_name = str(round(time.time())) + ext
             img_path = os.path.abspath(os.path.join(dest_dir, img_name))
             if not os.path.exists(dest_dir): os.mkdir(dest_dir)
             with open(img_path, 'wb') as f:
