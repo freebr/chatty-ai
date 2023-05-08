@@ -50,14 +50,11 @@ class APIController:
         """
         初始化菜单
         """
-        media_id = article_mgr.get_media_id('upgrade')
         # 创建菜单
         url = self.wx_api_url('menu/create')
         ret = requests.post(
             url,
-            data=json.dumps(get_wx_menu(
-                article_id_upgrade=media_id,
-                voice_menu=get_voice_menu(voices_info, recommended_voices)),
+            data=json.dumps(get_wx_menu(voice_menu=get_voice_menu(voices_info, recommended_voices)),
             ensure_ascii=False).encode('utf-8'),
             headers=get_headers(),
         ).json()
@@ -271,10 +268,20 @@ class APIController:
                         self.logger.error('处理用户 %s 的 AI 作画指令失败：%s', openid, str(e))
                         self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
                     return
+                
+                # 处理打赏消息
                 if content == '【打赏作者】':
-                    self.process_donate_request(openid)
+                    self.process_purchase_request(openid, cfg.data.prices.get('Donation'))
                     self.logger.info('用户 %s 点击链接“打赏作者”', openid)
                     return
+                
+                for level, price in user_mgr.vip_prices.items():
+                    if not user_mgr.vip_purchasable.get(level): continue
+                    if content != f'【升级{level}】': continue
+                    self.process_purchase_request(openid, price)
+                    self.logger.info('用户 %s 选择%s', openid, content)
+                    return
+
                 # 处理文本/语音消息
                 self.logger.info('用户 %s 发送消息，长度：%s', openid, len(content))
                 reply = None
@@ -322,9 +329,13 @@ class APIController:
                 return
         key: str = event_key
         match key:
-            case 'show-pay-qrcode':
-                self.logger.info('用户 %s 点击菜单“打赏我们”', openid)
-                self.process_donate_request(openid)
+            case 'ai-draw':
+                self.logger.info('用户 %s 点击菜单“AI 绘画”', openid)
+                if user_mgr.get_ai_draw_mode(openid):
+                    self.send_message(openid, autoreply_mgr.get('AIDrawExit'), send_as_text=True)
+                    user_mgr.set_ai_draw_mode(openid, False)
+                else:
+                    self.process_ai_draw_mode_request(openid)
             case 'show-group-chat-qrcode':
                 self.logger.info('用户 %s 点击菜单“讨论交流”', openid)
                 self.send_image(openid, chatgroup_mgr.shuffle_get_qrcode())
@@ -345,13 +356,23 @@ class APIController:
                         reply_end = autoreply_mgr.get('LevelDescriptionEndingVipLevel')
                     reply = autoreply_mgr.get('LevelDescriptionNormal') % (level, '\n'.join(credit_desc), reply_end)
                 self.send_message(openid, reply, send_as_text=True)
-            case 'ai-draw':
-                self.logger.info('用户 %s 点击菜单“AI 绘画”', openid)
-                if user_mgr.get_ai_draw_mode(openid):
-                    self.send_message(openid, autoreply_mgr.get('AIDrawExit'), send_as_text=True)
-                    user_mgr.set_ai_draw_mode(openid, False)
-                else:
-                    self.process_ai_draw_mode_request(openid)
+            case 'show-pay-qrcode':
+                self.logger.info('用户 %s 点击菜单“打赏我们”', openid)
+                self.process_purchase_request(openid, cfg.data.prices.get('Donation'))
+            case 'upgrade':
+                self.logger.info('用户 %s 点击菜单“升级额度”', openid)
+                media_id = article_mgr.get_media_id('upgrade')
+                self.push_article_by_id(openid, media_id)
+                grade_intros = []
+                for level, price in user_mgr.vip_prices.items():
+                    if not user_mgr.vip_purchasable.get(level): continue
+                    grade_intros.append(autoreply_mgr.get('UpgradeTipGradeIntro') % (
+                        level,
+                        user_mgr.vip_rights[level],
+                        round(price, 2)
+                    ))
+                reply = autoreply_mgr.get('UpgradeTip') % '\n\n'.join(grade_intros)
+                self.send_message(openid, reply, send_as_text=True)
             case _:
                 if not key.startswith('voice:'): return
                 self.process_voice_mode_request(openid, key)
@@ -558,23 +579,25 @@ class APIController:
                         'task_key': task_key,
                         'image_no': image_no,
                     }
-                    res = requests.post(
-                        url,
-                        data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-                        headers=get_headers(),
-                    )
-                    if res.status_code != 200:
+                    try:
+                        res = requests.post(
+                            url,
+                            data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                            headers=get_headers(),
+                            proxies={'http': '', 'https': ''},
+                        )
+                        if res.status_code != 200:
+                            raise Exception('HTTP ' + res.status_code)
+                        result = res.json()
+                        if result['code'] != 0:
+                            raise Exception(result)
+                        task_key = result['detail']['task_key']
+                        img_url = result['detail']['url']
+                    except Exception as e:
+                        self.logger.error('调用 Discord 接口时发生错误：%s', str(e))
                         self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
                         user_mgr.set_pending(openid, False)
                         return False
-                    result = res.json()
-                    if result['code'] != 0:
-                        self.logger.error('调用 Discord 接口时发生错误：%s', result)
-                        self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
-                        user_mgr.set_pending(openid, False)
-                        return False
-                    task_key = result['detail']['task_key']
-                    img_url = result['detail']['url']
                     # 下载图片
                     img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW, '.webp')
                     # 转换图片
@@ -662,23 +685,25 @@ class APIController:
                 'user_id': openid,
                 'prompt': prompt,
             }
-        res = requests.post(
-            url,
-            data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
-            headers=get_headers(),
-        )
-        if res.status_code != 200:
+        try:
+            res = requests.post(
+                url,
+                data=json.dumps(data, ensure_ascii=False).encode('utf-8'),
+                headers=get_headers(),
+                proxies={'http': '', 'https': ''},
+            )
+            if res.status_code != 200:
+                raise Exception('HTTP ' + res.status_code)
+            result = res.json()
+            if result['code'] != 0:
+                raise Exception(result)
+            task_key = result['detail']['task_key']
+            img_url = result['detail']['url']
+        except Exception as e:
+            self.logger.error('调用 Discord 接口时发生错误：%s', str(e))
             self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
             user_mgr.set_pending(openid, False)
             return False
-        result = res.json()
-        if result['code'] != 0:
-            self.logger.error('调用 Discord 接口时发生错误：%s', result)
-            self.send_message(openid, autoreply_mgr.get('ErrorRaised'), send_as_text=True)
-            user_mgr.set_pending(openid, False)
-            return False
-        task_key = result['detail']['task_key']
-        img_url = result['detail']['url']
         # 下载图片
         img_name, src_path = self.fetch_image(openid, img_url, DIR_IMAGES_AI_DRAW, '.webp')
         # 转换图片
@@ -719,8 +744,11 @@ class APIController:
         user_mgr.set_pending(openid, False)
         return True
 
-    def process_donate_request(self, openid):
-        self.send_image(openid, media_id=self.get_pay_qrcode(openid))
+    def process_purchase_request(self, openid, price):
+        """
+        处理购买会员请求
+        """
+        self.send_image(openid, media_id=self.get_pay_qrcode(openid, price))
 
     def process_voice_mode_request(self, openid, voice_key):
         """
@@ -1267,13 +1295,13 @@ class APIController:
             headers=get_headers(),
         )
 
-    def get_pay_qrcode(self, openid):
+    def get_pay_qrcode(self, openid, price):
         # media_id = 'LcVB-VNdn-QGqqjWJ6Eeu7FXDSqzFcSv8Yk7A48czcaXJFQsEnqA8A0xRw0bCJtY'
         # return media_id
         try:
             pay_qrcode_path, out_trade_no = payment_mgr.create_native_pay(
                 description='打赏·查小特AI',
-                price=cfg.data.prices.get('Donation'),
+                price=price,
                 to_file=True,
             )
             if out_trade_no:

@@ -4,10 +4,10 @@ if not environ.get('DEBUG'): environ['DEBUG'] = '0'
 environ['ALL_PROXY'] = 'http://127.0.0.1:8888' if environ['DEBUG'] == '1' else '' #'socks5h://127.0.0.1:7891'
 environ['TZ'] = 'Asia/Shanghai'
 environ['PORT_HTTP'] = '7000'
-environ['URL_SITE'] = 'https://freebr.cn'
-environ['URL_API'] = path.join(environ['URL_SITE'], 'chatty-ai')
-environ['URL_DISCORD'] = path.join(environ['URL_SITE'], 'discord')
-environ['URL_H5'] = path.join(environ['URL_SITE'], 'oxf')
+environ['URL_SITE'] = 'http://127.0.0.1:7000' if environ['DEBUG'] == '1' else 'https://freebr.cn'
+environ['URL_API'] = '/'.join([environ['URL_SITE'], 'chatty-ai'])
+environ['URL_DISCORD'] = '/'.join(['http://127.0.0.1:7070' if environ['DEBUG'] == '1' else environ['URL_SITE'], 'discord'])
+environ['URL_H5'] = '/'.join([environ['URL_SITE'], 'oxf'])
 
 ALLOWED_FILES = ['.htm', '.html', '.css', '.js', '.jpg', '.png', '.gif', '.txt', '.webp', '.wav', '.mp3', '.mp4', '.ico', '.ttf', '.map']
 DEBUG_MODE = environ['DEBUG'] == '1'
@@ -71,7 +71,7 @@ COMMAND_VARIATION = '垫图绘画'
 CREDIT_TYPENAME_DICT = {
     COMMAND_COMPLETION: '对话',
     COMMAND_IMAGINE: '图片生成',
-    COMMAND_VARIATION: '垫图绘画',
+    COMMAND_VARIATION: '参考图作画',
 }
 SYSTEM_PROMPT_IMG2IMG = """\
 Output the following JSON according to the content of <desc>:\

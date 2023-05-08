@@ -15,7 +15,7 @@ def get_voice_menu(voices_info, recommended_voices):
         else: female_count += 1
     return voice_menu
 
-def get_wx_menu(article_id_upgrade, voice_menu):
+def get_wx_menu(voice_menu):
     return {
         'button': [
             {
@@ -37,9 +37,9 @@ def get_wx_menu(article_id_upgrade, voice_menu):
                         'key': 'show-level',
                     },
                     {
-                        'type': 'article_id',
+                        'type': 'click',
                         'name': '升级额度',
-                        'article_id': article_id_upgrade,
+                        'key': 'upgrade',
                     },
                 ],
             },
